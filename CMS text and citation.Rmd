@@ -1,0 +1,24 @@
+---
+title: "Medicare Part D Antibiotic Prescribing in Pennsylvania,2020 – 2022"
+bibliography: CMS 2020_22.Bib
+link-citations: true
+output:
+  word_document 
+csl: "C:/Users/c-qjahan/Downloads/Antimicrobial Stewardship CMS analysis/AS CMS Analysis/american-medical-association.csl"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+
+The evaluation of prescribing patterns among healthcare providers can be used to inform antimicrobial stewardship initiatives that seek to improve antimicrobial prescribing practices. Antimicrobial use contributes to the development of antimicrobial-resistant infections, causing a substantial public health threat. Over 2.8 million antimicrobial-resistant infections occurred in the United States in 2019, resulting in over 35,000 deaths.[@Antimicrobialresistance] The COVID-19 pandemic further challenged healthcare systems and resulted in setbacks in the prevention of antimicrobial resistance.[@COVIDimpact] Judicious antimicrobial prescribing is encouraged to preserve antimicrobial efficiency, minimize adverse events in patients, and limit the development and spread of organisms that are resistant to antimicrobials.[@Antimicrobialresistance] This report utilizes Medicare Part D claims data from 2020-2022, which includes all prescription claims submitted to Medicare Part D, to describe outpatient antibiotic prescribing by specialty and location. This information will be used by the Pennsylvania Department of Health to prioritize certain medical specialties and individual providers for additional education and support regarding antimicrobial stewardship.
+
+## Methods
+
+The Centers for Medicare and Medicaid Services (CMS) provide publicly-available data for outpatient Medicare Part D claims in the United States.[@CentersforMedicare2020],[@CentersforMedicare2021] We filtered the 2020, 2021, and 2022 Medicare Part D claims data separately by location to identify prescribers located in Pennsylvania .[@CentersforMedicare2020],[@CentersforMedicare2021] The analysis was carried out using R statistical software version 4.3.1.[@R] Individual providers who prescribed fewer than eleven antibiotic prescriptions throughout 2020-2022 were excluded during analysis because antibiotic claims were suppressed by CMS when the values were between 1 and 10 to prevent the identification of individual patients. The dataset was filtered to include only antibiotic prescriptions. Also, medical specialties with fewer than 100 prescribers and advanced practice providers, such as nurse practitioners and physician assistants, were excluded from analysis due to the dataset not including a specific setting of their practice. Medical specialty category designations that overlapped were combined. For example, the category of “oral surgery” and the category of “oral-maxillofacial surgery” were combined to become ‘Oral and Maxillofacial Surgery.’ 
+We analyzed prescribing practices in rural and urban areas using the definition of rurality provided by the Center for Rural Pennsylvania. [@RuralUrban] This definition classifies counties as rural if the population density is less than 284 persons per square mile, and all other counties are classified as urban. For each provider, a single practice location was specified according to National Provider Identifier (NPI)  records to determine county-level classifications based on this definition. Additionally, we evaluated prescribing rates by levels of social vulnerability using the Centers for Disease Control and Prevention’s (CDC)  SVI. [@CentersforDiseaseControlandPrevention] The SVI assigns each county an “overall vulnerability” score ranging from 0 to 1 based on several social factors. We categorized counties into three vulnerability groups: low (SVI ≤ 0.25), medium (0.25 < SVI ≤ 0.50), and high (SVI > 0.50). Prescribing patterns were also analyzed by SVI, provider gender, and rurality using statistical tests to compare differences between groups. Specifically, we utilized independent t-tests to compare prescribing rates between rural and urban providers, as well as between male and female providers. We used Analysis of variance (ANOVA) was to evaluate differences in prescribing rates across the three SVI categories.
+
+## Citations
