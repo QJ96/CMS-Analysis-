@@ -1,0 +1,1758 @@
+---
+title: 'Identification of High Antibiotic Prescribers in Pennsylvania : An Analysis
+  of CMS Medicare Part D Data'
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r CMS_2020_2021, echo = FALSE, include=FALSE}
+#Loading Packages
+
+library(lubridate)
+library(scales)
+library(summarytools)
+library(expss)
+library(tidyverse)
+library(readxl)
+library(readr)
+library(janitor)
+library(dplyr)
+library(stringr)
+library(flextable)
+library(haven)
+library(tidyverse)
+library(janitor)
+library(stringr)
+library(english)
+library(knitr)
+library(lubridate)
+library(DT)
+library(haven)
+library(htmlwidgets)
+library(gtools)
+
+
+#---------AS_2020 (n= 60229)----------------------------------------------------------
+
+# Import raw CSV data
+
+Medicare_Part_D_2020_PA_file <- "C:/Users/c-qjahan/Downloads/Antimicrobial Stewardship CMS analysis/Medicare_Part_D_Prescribers_by_Provider_2020.csv"
+
+AS_CMS_PA_2020<- read.csv(Medicare_Part_D_2020_PA_file)
+
+# Data Cleaning and transformation (missing values,blanks,duplicates,mutations,pivoting,binding, summarize, grouping) and
+# calculating counts required for tables
+
+Prescribers_F_2020 <- sum(is.na(AS_CMS_PA_2020$Prscrbr_First_Name))    # 0
+Prescribers_F_B_2020 <- sum((AS_CMS_PA_2020$Prscrbr_First_Name == "")) # 1 blank
+Prescribers_L_2020 <- sum(is.na(AS_CMS_PA_2020$Prscrbr_Last_Org_Name)) # 0
+Prescribers_L_B_2020 <- sum((AS_CMS_PA_2020$Prscrbr_Last_Org_Name == "")) # 0
+duplicates_NPI_2020 <- AS_CMS_PA_2020$PRSCRBR_NPI[duplicated(AS_CMS_PA_2020$PRSCRBR_NPI)] # empty
+
+# Calculating total No.of Prescribers (n= 60229); variables :Prscrbr_First_Name, Prscrbr_Last_Org_Name
+
+Total_prescribers_2020 <- AS_CMS_PA_2020 %>% 
+  summarise(Total_Prescribers_2020 = sum(!is.na(Prscrbr_First_Name)))
+
+#num_rows <- dim(Total_prescribers_2020)[1]
+
+Total_prescribers_new_2020 <- Total_prescribers_2020 %>% 
+ mutate(Total_Prescribers_2020 = format(Total_Prescribers_2020, big.mark=","))# formatted to include comma 
+
+# SECTION 1------------------------------------------------------------------------------------------------------
+# Table 1. Summary of Prescribers
+
+prscbr_summary_2020 <- AS_CMS_PA_2020 %>% #(n= 60,229--- n= 32,199)
+  select(PRSCRBR_NPI,Prscrbr_Last_Org_Name,Prscrbr_First_Name,Prscrbr_Gndr,Prscrbr_zip5,Prscrbr_Ent_Cd,Prscrbr_State_Abrvtn,Prscrbr_RUCA,Prscrbr_RUCA_Desc,Prscrbr_Type,Tot_Clms,Tot_Benes,Antbtc_Tot_Clms) %>% 
+  mutate(Tot_Clms = as.numeric(str_remove_all(Tot_Clms, ",")),#due to presence of commas after converting to numeric those values are replaced with NAs
+          Tot_Benes = case_when(Tot_Benes == ""~ NA_character_, T~Tot_Benes), #blanks refer to suppressed values <11 and converted to missing and later to numeric 5
+         Tot_Benes = as.numeric(str_remove_all(Tot_Benes, ",")),
+         Tot_Benes = case_when(is.na(Tot_Benes)~5, T~Tot_Benes),
+         Antbtc_Tot_Clms = case_when(Antbtc_Tot_Clms == ""~ NA_character_, T~Antbtc_Tot_Clms),
+         Antbtc_Tot_Clms = as.numeric(str_remove_all(Antbtc_Tot_Clms, ",")),
+         Antbtc_Tot_Clms = case_when(is.na(Antbtc_Tot_Clms) ~ 1,
+                                     T~Antbtc_Tot_Clms)) %>% 
+  filter(!(Antbtc_Tot_Clms %in% c(0,1))) %>% # (n= 32428) excluded values < 11 which are assumed to be suppressed values
+ filter(!(Tot_Benes %in% 5)) # (n= 32199) excluded values < 11 which are assumed to be suppressed values
+#----------------------------------------------------------------------------------------------------------------
+#A. No.of Prescribers; variable:Prscrbr_First_Name (n=32199)
+
+Prescribers_2020 <- prscbr_summary_2020 %>% 
+  summarise(Prescribers = sum(!is.na(Prscrbr_First_Name)))
+
+Prescribers_new_2020 <- Prescribers_2020 %>% 
+  mutate(Prescribers = format(Prescribers, big.mark=","))# formatted to include common in numbers wherever required
+
+# This calculation is ignored for revised report: calculating percentage of prescribers from total prescribers after excluding the ones with <11 antibiotic claims
+
+percentage_of_prescribers_2020 <- (Prescribers_2020 / Total_prescribers_2020) * 100
+
+percent_of_prescribers_2020 <-percentage_of_prescribers_2020%>% 
+  mutate(percent_prescribers=paste0(round(Prescribers), "%"))
+#----------------------------------------------------------------------------------------------------------------
+#B.No. of Specialties; variable: Prscrbr_Type 
+
+blank_count_spcl_2020 <- sum(prscbr_summary_2020$Prscrbr_Type == "") # no blanks
+missing_spcls_2020 <- sum(is.na(prscbr_summary_2020$Prscrbr_Type)) # 0 missing
+
+tot_specialties_1_2020 <- prscbr_summary_2020 %>% #(n=80) # before collapsing specialties
+  summarize(Specialties = n_distinct(Prscrbr_Type))
+
+# collapsing specialties
+prscbr_summary_2020 <- prscbr_summary_2020 %>% 
+  mutate(Prscrbr_Type_new = case_when(Prscrbr_Type == "Dentist"~ "Dentistry",
+                                      
+                                      Prscrbr_Type %in% c("Colon & Rectal Surgery",
+                                                          "Colorectal Surgery (Proctology)") ~ "Colorectal Surgery",
+                                      Prscrbr_Type %in% c("Maxillofacial Surgery",
+                                                          "Oral & Maxillofacial Surgery",
+                                                          "Oral Surgery (Dentist only)") ~ "Oral and Maxillofacial Surgery",
+                                      Prscrbr_Type %in% c("Neurological Surgery",
+                                                          "Neurosurgery") ~  "Neurosurgery",
+                                      Prscrbr_Type %in% c("Thoracic Surgery",
+                                                          "Thoracic Surgery (Cardiothoracic Vascular Surgery)") ~ "Thoracic Surgery",
+                                      Prscrbr_Type %in% c("Orthopaedic Surgery",
+                                                          "Orthopedic Surgery") ~ "Orthopaedic Surgery",
+                                      Prscrbr_Type %in% c("Pediatric Medicine",
+                                                          "Pediatrics")~ "Pediatrics",
+                                      Prscrbr_Type %in% c("Physical Medicine & Rehabilitation",
+                                                          "Physical Medicine and Rehabilitation",
+                                                          "Rehabilitation Practitioner")~ "Physical Medicine & Rehabilitation",
+                                      Prscrbr_Type %in% c("Plastic and Reconstructive Surgery",
+                                                          "Plastic Surgery") ~ "Plastic and Reconstructive Surgery",
+                                      Prscrbr_Type %in% c("Neuropsychiatry",
+                                                          "Psychiatry & Neurology") ~ "Neuropsychiatry",
+                                      Prscrbr_Type %in% c("Medical Genetics and Genomics",
+                                                          "Medical Genetics, Ph.D. Medical Genetics") ~ "Medical Genetics and Genomics",
+                                      Prscrbr_Type %in% c("Family Medicine",
+                                                          "Family Practice")~ "Family Medicine",
+                                      Prscrbr_Type %in% c("Radiology",
+                                                          "Diagnostic Radiology",
+                                                          "Interventional Radiology") ~ "Radiology",
+                                      Prscrbr_Type %in% c("Gynecological Oncology",
+                                                          "Hematology-Oncology",
+                                                          "Medical Oncology",
+                                                          "Radiation Oncology")~ "Oncology",
+                                      Prscrbr_Type %in% c("Pain Management",
+                                                          " Pain Medicine")~ "Pain Medicine",
+                                      Prscrbr_Type %in% c("Adult Congenital Heart Disease",
+                                                          "Advanced Heart Failure and Transplant Cardiology",
+                                                          "Cardiology",
+                                                          "Clinical Cardiac Electrophysiology",
+                                                          "Interventional Cardiology")~ "Cardiology", T~ Prscrbr_Type))
+
+
+tot_specialties_2_2020 <- prscbr_summary_2020 %>% 
+  summarize(Specialties = n_distinct(Prscrbr_Type_new)) #(n=67) # after collapsing specialites and without excluding nurse practioners and Physician Assistant
+
+#----------------------------------------------------------------------------------------------------------------
+#C. No. of Beneficiaries (n=6626763) ; variable :Tot_Benes, Counts fewer than 11 are suppressed and are indicated by a blank.(inconsitencies- commas, blanks)
+
+blank_count_bene_2020 <- sum(AS_CMS_PA_2020$Tot_Benes == "") # 7030 blanks = suppressed
+missing_count_bene_2020 <- sum(is.na(AS_CMS_PA_2020$Tot_Benes)) # 0 missing
+Total_benefi_2020 <- prscbr_summary_2020 %>%
+  summarize(Beneficiaries = sum(Tot_Benes))
+
+# Total_benefi_2020 <- Total_benefi_2020 %>% 
+#   mutate(Beneficiaries = format(Beneficiaries, big.mark=","))
+
+#Notes by Analyst (QJ):: 7030 blanks(suppressed) were in raw dataset been converted to missing and later to numeric 5 as per requirements,and are excluded from study(N= 229(no.of blanks in benes after excl 0,1); n= 32428( after excl 0,1)-229 = 32199)
+#----------------------------------------------------------------------------------------------------------------
+
+#D. No. of total antibiotic claims(n=2423316); variable :Antbtc_Tot_Clms
+
+#The Antbtc_Tot_Clms is suppressed when Antbtc_Tot_Clms is between 1 and 10.
+#A blank indicates the value is suppressed.
+
+blank_count_Anbtcclms_2020 <- sum(AS_CMS_PA_2020$Antbtc_Tot_Clms == "") #19236
+missing_count_Anbtcclms_2020 <- sum(is.na(AS_CMS_PA_2020$Antbtc_Tot_Clms)) # 0
+
+Total_Anbtcclms_2020 <- prscbr_summary_2020 %>%
+  summarize(`Antibiotic Claims` = sum(Antbtc_Tot_Clms,na.rm = TRUE))
+
+Total_Anbtcclms_new_2020 <- Total_Anbtcclms_2020 %>% 
+  mutate(`Antibiotic Claims` = format(`Antibiotic Claims`, big.mark=","))
+
+Total_Anbtcclms_new_2020 <- Total_Anbtcclms_new_2020 %>% 
+  mutate(`Antibiotic Claims` = as.numeric(str_remove_all(`Antibiotic Claims`, ",")),
+          Claims_in_millions = round(`Antibiotic Claims`/1e6,1))
+
+# formatted to include common in numbers wherever required
+
+#Notes by Analyst (QJ): 19236 blanks(suppressed) were in raw dataset been converted to missing and later to numeric 1 as per requirements,and are
+#----------------------------------------------------------------------------------------------------------------
+
+#E. This cal is ignored for revised report: No.of prescriptions; variable:Tot_Clms (n=61029757)
+
+blank_count_totclms_2020 <- sum(prscbr_summary_2020$Tot_Clms == "") # no blanks
+missing_count_totclms_2020 <- sum(is.na(AS_CMS_PA_2020$Tot_Clms)) # 0 missing
+total_claims_2020 <- prscbr_summary_2020 %>%
+  summarize(`Total Claims` = sum(Tot_Clms)) # no NAs so na.rm = TRUE not required
+# total_claims_2020 <- total_claims_2020 %>% 
+#   mutate(`Total Claims` = format(`Total Claims`, big.mark=","))
+
+# calculating percentage of antibiotic claims from total prescriptions 
+
+percentage_of_antibiotic_claims_2020 <- (Total_Anbtcclms_2020 / total_claims_2020) * 100
+
+percent_of_antibiotic_claims_2020 <-percentage_of_antibiotic_claims_2020 %>% 
+  mutate(percent_antibiotics=paste0(round(`Antibiotic Claims`,1), "%"))
+
+#----------------------------------------------------------------------------------------------------------------
+
+#F.Overall Antibiotic Prescription rate for PA (after excluding suppressed values )
+#calculation: (Total_Anbtcclms_2020 / Total_benefi_2020)* 1000 (No. of outpatient antibiotic prescriptions per 1,000 
+#beneficiaries)
+
+antibiotic_prescription_rate_2020 <- (Total_Anbtcclms_2020 / Total_benefi_2020)* 1000 
+
+antibiotic_prescription_rate_2020 <- antibiotic_prescription_rate_2020 %>% 
+  rename(`Antibiotic Prescription Rate`= `Antibiotic Claims`)  
+
+antibiotic_prescription_rate_2020 <-antibiotic_prescription_rate_2020 %>% #(value=365.7)
+  mutate(`Antibiotic Prescription Rate`=round(`Antibiotic Prescription Rate`,1))
+
+# Column binding all above dataframes to generate table 1 in the report (summary of prescribers)
+# total claims row is included now but later sliced in final table
+prescriber_summary_2020 <- cbind(Prescribers_2020,tot_specialties_2_2020,Total_benefi_2020,Total_Anbtcclms_2020,antibiotic_prescription_rate_2020,total_claims_2020) %>% 
+  pivot_longer(cols= Prescribers:`Total Claims`,
+               names_to = "CATEGORY",values_to = "COUNT")
+
+#--------------------------------------------------------------------------------------------------------------------------------------------
+#SECTION 2
+
+# Table 2. Top 5 Specialties; variables:(Prscrbr_Type,Tot_Clms,Antbtc_Tot_Clms,Prscrbr_RUCA,Prscrbr_RUCA_Desc)
+
+
+
+# Excluding specialties with less than 100 prescribers
+
+specialt_name_2020_lessthan_100 <- prscbr_summary_2020 %>% #(n=23952)
+  select(Prscrbr_Type,Tot_Clms,Tot_Benes,Antbtc_Tot_Clms,Prscrbr_RUCA,Prscrbr_RUCA_Desc,Prscrbr_zip5,Prscrbr_Gndr,Prscrbr_Type_new)%>% 
+  count(Prscrbr_Type_new, name = "Specialty_Counts") %>% 
+  filter(Specialty_Counts >= 100) #26
+
+
+# excluding Nurse Practitioner and Physician Assistant
+specialt_name_2020 <- prscbr_summary_2020 %>% #(n=23952)
+  select(Prscrbr_Type,Tot_Clms,Tot_Benes,Antbtc_Tot_Clms,Prscrbr_RUCA,Prscrbr_RUCA_Desc,Prscrbr_zip5,Prscrbr_Gndr,Prscrbr_Type_new) %>% 
+  filter(!(Prscrbr_Type_new %in% c("Nurse Practitioner","Physician Assistant"))) 
+
+# total distinct specialties and their counts
+
+specialty_count_1_2020 <- specialt_name_2020 %>% #(n=65)
+  count(Prscrbr_Type_new, name = "Specialty_Counts") #(nurse and physician assistant were excluded)
+
+specialty_count_1a_2020 <-specialty_count_1_2020  %>% #(n=23952)
+  summarize(total_spcl_count = sum(Specialty_Counts,na.rm = TRUE))
+
+
+Top_5_specl_2020 <- specialt_name_2020 %>% 
+  group_by(Prscrbr_Type_new) %>%
+  left_join(specialty_count_1_2020 ,by= "Prscrbr_Type_new") %>% 
+  filter(Specialty_Counts >= 100) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms )/(Tot_Benes) * 1000
+  ) %>%
+  arrange(desc(AB_Prescp_rate)) %>%
+  top_n(5) %>% 
+  left_join(specialty_count_1_2020 ,by= "Prscrbr_Type_new") %>% 
+  relocate(Specialty_Counts,.after = Prscrbr_Type_new) %>% 
+  relocate(Tot_Benes, .after = Antbtc_Tot_Clms) %>% 
+  mutate(AB_Prescp_rate=round(AB_Prescp_rate)) %>% 
+  rename(specialty =Prscrbr_Type_new,
+         `Number of specialists`= Specialty_Counts,
+         `Number of antibiotic claims`=Antbtc_Tot_Clms,
+         `Number of total beneficiaries `=Tot_Benes,
+         `Antibiotic prescriptions per 1,000 beneficiaries,Rate`= AB_Prescp_rate)
+#----------------------------------------------------------------------------------------
+# SECTION 3
+#Table 3.Top 5 by setting-Rural and Urban; variables:(Prscrbr_Type,Tot_Clms,Antbtc_Tot_Clms,Prscrbr_RUCA,Prscrbr_RUCA_Desc)
+
+
+PA_zipcode_file <-"C:/Users/c-qjahan/Downloads/Antimicrobial Stewardship CMS analysis/PA_zipcode.xlsx"
+PA_zipcode <- read_excel(PA_zipcode_file) # adds county column
+
+#merge
+
+# zipcode file check
+PA_zipcode_merge <- PA_zipcode %>% 
+  mutate(zipcode = as.numeric(zipcode)) %>% 
+  select(Prscrbr_zip5=zipcode, County= county)
+
+CMS_2020_zip_pack <- specialt_name_2020 %>% 
+  mutate(Prscrbr_zip5 = as.numeric(Prscrbr_zip5))
+
+#leftjoin
+CMS_zipcountypack_2020_merge <- CMS_2020_zip_pack %>% #(n=23952)
+  left_join(PA_zipcode_merge, by="Prscrbr_zip5")
+
+# missing_zipcodepack_merge <- sum(is.na(CMS_zipcountypack_2020_merge$zipcode)) #0
+# missing_countypack_merge <- sum(is.na(CMS_zipcountypack_2020_merge$County)) # 11 (for zips : 15266, 15273, 15288)
+
+CMS_zip_rate <- CMS_zipcountypack_2020_merge %>% #(n=23952)
+  mutate(AB_rate_2020 =(Antbtc_Tot_Clms/Tot_Benes)* 1000,
+        County = gsub(" County", "", County)
+         ) %>% 
+  filter(!(is.na(County))) #(n=23941)
+
+
+counties_settings <- read_excel("C:/Users/c-qjahan/Downloads/Antimicrobial Stewardship CMS analysis/List of Counties settings 2022.xlsx")
+
+
+# Settings -- counties
+
+top_5_settings_2020 <-CMS_zip_rate %>% 
+  filter(Prscrbr_Type_new %in% c("Dentistry","Infectious Disease","Oral and Maxillofacial Surgery","Plastic and Reconstructive Surgery","Urology")) %>%
+  left_join(counties_settings, by = c("County" = "County Name")) %>% 
+  group_by(Prscrbr_Type_new,settings = `Rural/ Urban`) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000,
+    AB_Prescp_rate=round(AB_Prescp_rate)) %>% 
+  #providers = n() 
+  arrange(desc(AB_Prescp_rate)) %>%
+  pivot_wider(
+    names_from = settings,
+    values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate)) %>% 
+  rename(Specialty = Prscrbr_Type_new,
+         `Number of antibiotic claims rural` = Antbtc_Tot_Clms_Rural,
+         `Number of total beneficiaries rural` = Tot_Benes_Rural,
+         `Antibiotic prescriptions per 1,000 beneficiaries,Rate rural` = AB_Prescp_rate_Rural,
+         #`Number of Specialists_Rural` = providers_Rural,
+         `Number of antibiotic claims urban` = Antbtc_Tot_Clms_Urban,
+         `Number of total beneficiaries urban` = Tot_Benes_Urban,
+         `Antibiotic prescriptions per 1,000 beneficiaries,Rate urban` = AB_Prescp_rate_Urban) %>% 
+         #`Number of Specialists_Urban` = providers_Urban) %>% 
+  select(1,4,2,6,5,3,7)
+
+
+
+
+#### RUCA classification ###############################
+
+##################################################################################################################################################3
+#Before excluding Nurse practioners and physician assistant
+
+# blank_count_urban_rural_2020 <- sum(AS_CMS_PA_2020$Prscrbr_RUCA == "",na.rm =T) # no blanks
+# other_count_urban_rural_2020 <- sum(AS_CMS_PA_2020$Prscrbr_RUCA == 99,na.rm =T) # 5 99's
+# missing_count__urban_rural_2020 <- sum(is.na(AS_CMS_PA_2020$Prscrbr_RUCA)) # 11 missing
+#
+# #After excluding Nurse practioners and physician assistant
+#
+# blank_count_urban_rural_a_2020 <- sum(specialt_name_2020$Prscrbr_RUCA == "",na.rm=T) # no blanks
+# other_count_urban_rural_a_2020 <- sum(specialt_name_2020$Prscrbr_RUCA == 99,na.rm =T) # 1
+# missing_count_urban_rural_a_2020 <- sum(is.na(specialt_name_2020$Prscrbr_RUCA)) # 4 missing
+
+
+# collapsing into rural and urban based on RUCA codes
+
+# urban_rural_2020 <- specialt_name_2020 %>% #(n=  23952)
+#   mutate(Prscrbr_RUCA= case_when(Prscrbr_RUCA %in% c(1, 1.1)~ 1,
+#                                  Prscrbr_RUCA %in% c(2, 2.1)~ 2,
+#                                  Prscrbr_RUCA %in% c(4, 4.1)~4,
+#                                  Prscrbr_RUCA %in% c(7, 7.1)~7,
+#                                  Prscrbr_RUCA %in% c(10, 10.1)~10,
+#                                  T~ Prscrbr_RUCA)) %>%
+#   filter(!is.na(Prscrbr_RUCA)&Prscrbr_RUCA!= 99) #
+
+# Notes by Analyst (QJ):Prscrbr_RUCA: 99's =1; NAs=4 , total 5 excluded ( 23952-5 = 23947)
+
+##############################################################################################################################################
+
+# top_5_settings_2020 <-urban_rural_2020 %>%
+#   filter(Prscrbr_Type_new %in% c("Dentistry","Infectious Disease","Oral and Maxillofacial Surgery","Plastic and Reconstructive Surgery","Urology")
+#   ) %>%
+#   mutate(settings = case_when(Prscrbr_RUCA %in% c(1,2,3)~ "Urban",
+#                               Prscrbr_RUCA %in% c(4,5,6,7,8,9,10)~ "Rural",
+#                               T~ "other")) %>%
+#   group_by(Prscrbr_Type_new,settings) %>%
+#   summarise(
+#     Tot_Benes = sum(Tot_Benes),
+#     Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+#     AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000,
+#     AB_Prescp_rate=round(AB_Prescp_rate)) %>%
+#     #providers = n()
+#   arrange(desc(AB_Prescp_rate)) %>%
+#   pivot_wider(
+#     names_from = settings,
+#     values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate)
+#
+#   ) %>%
+#   rename(Specialty = Prscrbr_Type_new,
+#          `Number of antibiotic claims rural` = Antbtc_Tot_Clms_Rural,
+#          `Number of total beneficiaries rural` = Tot_Benes_Rural,
+#          `Antibiotic prescriptions per 1,000 beneficiaries,Rate rural` = AB_Prescp_rate_Rural,
+#          #`Number of Specialists_Rural` = providers_Rural,
+#          `Number of antibiotic claims urban` = Antbtc_Tot_Clms_Urban,
+#          `Number of total beneficiaries urban` = Tot_Benes_Urban,
+#          `Antibiotic prescriptions per 1,000 beneficiaries,Rate urban` = AB_Prescp_rate_Urban,
+#          #`Number of Specialists_Urban` = providers_Urban
+#   ) %>%
+#   select(1,4,2,6,5,3,7)
+
+
+###################################################################################################
+
+#----------------------------------------------------------------------------------
+#SECTION 4
+#Table 4: Top 5 by Prescriber Gender
+
+top_5_gender_2020 <-specialt_name_2020 %>% 
+  filter(Prscrbr_Type_new %in% c("Dentistry","Infectious Disease","Oral and Maxillofacial Surgery","Plastic and Reconstructive Surgery","Urology")
+  ) %>%
+  mutate(Gender = case_when(Prscrbr_Gndr == "F" ~ "Female",
+                            Prscrbr_Gndr == "M" ~ "Male",
+                            T~ "other")) %>% 
+  group_by(Prscrbr_Type_new,Gender) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000,
+    AB_Prescp_rate=round(AB_Prescp_rate)
+    #providers = n()
+  ) %>%
+  arrange(desc(AB_Prescp_rate)) %>%
+  pivot_wider(
+    names_from = Gender,
+    values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate))%>%  #,providers
+  rename(Specialty = Prscrbr_Type_new,
+         `Number of antibiotics male` = Antbtc_Tot_Clms_Male,
+         `Number of total beneficiaries male` = Tot_Benes_Male,
+         `Antibiotic prescriptions per 1,000 beneficiaries,Rate male` = AB_Prescp_rate_Male,
+         `Number of antibiotics female` = Antbtc_Tot_Clms_Female,
+         `Number of total beneficiaries female` = Tot_Benes_Female,
+         `Antibiotic prescriptions per 1,000 beneficiaries,rate female` = AB_Prescp_rate_Female) %>% 
+  select(1,4,2,6,5,3,7)
+
+  
+ ID_gender_2020 <-specialt_name_2020 %>% 
+  filter(Prscrbr_Type_new %in% c("Infectious Disease")) %>%
+  mutate(Gender = case_when(
+                            Prscrbr_Gndr == "M" ~ "Male",
+                            T~ "other"),
+         Prscrbr_Type_new = case_when(Prscrbr_Type_new == "Infectious Disease" ~ "Infectious Disease_2020", T~ Prscrbr_Type_new)) %>% 
+   filter(Gender == "Male") %>% 
+  group_by(Prscrbr_Type_new,Gender) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000,
+    AB_Prescp_rate =round(AB_Prescp_rate)
+    #providers = n()
+  ) %>%
+  arrange(desc(AB_Prescp_rate)) %>%
+  pivot_wider(
+    names_from = Gender,
+    values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate))                                                                                                                                                                                                                              
+ 
+ 
+   
+ ID_gender_2020_F <-specialt_name_2020 %>% 
+  filter(Prscrbr_Type_new %in% c("Infectious Disease")) %>%
+  mutate(Gender = case_when(
+                            Prscrbr_Gndr == "F" ~ "Female",
+                            T~ "other"),
+         Prscrbr_Type_new = case_when(Prscrbr_Type_new == "Infectious Disease" ~ "Infectious Disease_2020", T~ Prscrbr_Type_new)) %>% 
+   filter(Gender == "Female") %>% 
+  group_by(Prscrbr_Type_new,Gender) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000,
+    AB_Prescp_rate =round(AB_Prescp_rate)
+    #providers = n()
+  ) %>%
+  arrange(desc(AB_Prescp_rate)) %>%
+  pivot_wider(
+    names_from = Gender,
+    values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate))   
+#---------AS 2021 (n= 61,409)------------------------------------------------------------------------------------
+
+# Import raw CSV data
+
+Medicare_Part_D_2021_PA_file <- "C:/Users/c-qjahan/Downloads/Antimicrobial Stewardship CMS analysis/Medicare_Part_D_Prescribers_by_Provider_2021.csv"
+
+AS_CMS_PA_2021<- read.csv(Medicare_Part_D_2021_PA_file) 
+
+# Data Cleaning and transformation (missingvalues,blanks,duplicates,mutations,pivoting,binding,summarize, grouping) and
+# calculating counts required for tables
+
+Prescribers_F_2021 <- sum(is.na(AS_CMS_PA_2021$Prscrbr_First_Name))    # 0
+Prescribers_F_B_2021 <- sum((AS_CMS_PA_2021$Prscrbr_First_Name == "")) # 1 blank
+Prescribers_L_2021 <- sum(is.na(AS_CMS_PA_2021$Prscrbr_Last_Org_Name)) # 0
+Prescribers_L_B_2021 <- sum((AS_CMS_PA_2021$Prscrbr_Last_Org_Name == "")) # 0
+duplicates_NPI_2021 <- AS_CMS_PA_2021$PRSCRBR_NPI[duplicated(AS_CMS_PA_2021$PRSCRBR_NPI)] # empty
+
+#duplicates_F <- AS_CMS_PA_2021$Prscrbr_First_Name[duplicated(AS_CMS_PA_2021$Prscrbr_First_Name)]
+#duplicates_L <- AS_CMS_PA_2021$Prscrbr_Last_Org_Name[duplicated(AS_CMS_PA_2021$Prscrbr_Last_Org_Name)]
+# prescribers with same first_name,last_name,type, RUCA, state, city,street,FIPS,zip(n=44)                                
+# duplicates_prscrbrs <- prscbr_summary_2021%>%
+#   group_by(Prscrbr_First_Name,Prscrbr_Last_Org_Name,Prscrbr_Type,Prscrbr_RUCA,Prscrbr_St1,Prscrbr_St2,Prscrbr_City,Prscrbr_State_FIPS,Prscrbr_zip5) %>%
+#   filter(n() > 1) %>%
+#   arrange(Prscrbr_First_Name,Prscrbr_Last_Org_Name) %>% 
+#   ungroup()
+
+
+# Calculating total No.of Prescribers (n= 61408); variables :Prscrbr_First_Name, Prscrbr_Last_Org_Name
+
+Total_prescribers_2021 <- AS_CMS_PA_2021 %>% 
+  filter(!(Prscrbr_Last_Org_Name == "Minnich's Pharmacy Inc")) %>% 
+  summarise(Total_Prescribers_2021 = sum(!is.na(Prscrbr_First_Name)))
+
+#num_rows <- dim(Total_prescribers)[1]
+
+Total_prescribers_new_2021 <- Total_prescribers_2021 %>% 
+  mutate(Total_Prescribers_2021 = format(Total_Prescribers_2021 , big.mark=","))# formatted to include comma in numbers wherever required
+
+#Notes by Analyst (QJ):
+#1.a. checked Prscrbr_Ent_Cd = "I"(61408) Prscrbr_Ent_Cd = "O"(n=01)
+#b. Excluded Minnich's Pharmacy Inc which is an organisation (PRSCRBR_NPI :1255329231,Ent_cd =O, gendr= blank) therefore,(61409-1 =61408) 
+
+#---------------------------------------------------------------------------------------------
+#SECTION I
+#Table 1. SUMMARY OF PRESCRIBERS
+
+prscbr_summary_2021 <- AS_CMS_PA_2021 %>% #(n= 61409 --- 32839)
+  select(PRSCRBR_NPI,Prscrbr_Last_Org_Name,Prscrbr_First_Name,Prscrbr_Gndr,Prscrbr_Ent_Cd,Prscrbr_State_Abrvtn,
+         Prscrbr_RUCA,Prscrbr_RUCA_Desc,Prscrbr_Type,Tot_Clms,Tot_Benes,Antbtc_Tot_Clms,Prscrbr_St1,Prscrbr_St2,Prscrbr_St2,Prscrbr_City,Prscrbr_State_FIPS,Prscrbr_zip5) %>% 
+  mutate(Prscrbr_First_Name= case_when(Prscrbr_First_Name == ""~ NA_character_,
+                                       T~Prscrbr_First_Name),
+         Tot_Clms = as.numeric(str_remove_all(Tot_Clms, ",")),
+         Tot_Benes = case_when(Tot_Benes == ""~ NA_character_, T~Tot_Benes), #blanks refer to suppressed values <11 and converted to missing and later to numeric 5
+         Tot_Benes = as.numeric(str_remove_all(Tot_Benes, ",")),
+         Tot_Benes = case_when(is.na(Tot_Benes)~ 5, T~ as.numeric(Tot_Benes)),
+         Antbtc_Tot_Clms = case_when(Antbtc_Tot_Clms == ""~ NA_character_, T~Antbtc_Tot_Clms),
+         Antbtc_Tot_Clms = as.numeric(str_remove_all(Antbtc_Tot_Clms, ",")),
+         Antbtc_Tot_Clms = case_when(is.na(Antbtc_Tot_Clms) ~ 1,
+                                     T~Antbtc_Tot_Clms)) %>% 
+  filter(!(Antbtc_Tot_Clms%in%c(0,1))) %>%  # n= 33010 excluded values < 11 which are assumed to be suppressed values
+  filter(!(Tot_Benes%in% 5)) # n= 32839 excluded values < 11 which are assumed to be suppressed values
+
+#-----------------------------------------------------------------------------------------------------
+#A. No.of Prescribers; variable:Prscrbr_First_Name (n= 32839)
+
+Prescribers_2021 <- prscbr_summary_2021 %>%
+  summarise(Prescribers = sum(!is.na(Prscrbr_First_Name)))
+
+Prescribers_new_2021 <- Prescribers_2021 %>% 
+  mutate(Prescribers = format(Prescribers, big.mark=",")) # formatted to include common in numbers wherever required
+
+# ignore: calculating percentage of prescribers from total prescribers after excluding the ones with <11 antibiotic claims
+
+percentage_of_prescribers_2021 <- (Prescribers_2021 / Total_prescribers_2021) * 100
+
+percent_of_prescribers_2021 <-percentage_of_prescribers_2021 %>% 
+  mutate(percent_prescribers=paste0(round(Prescribers), "%"))
+#-----------------------------------------------------------------------------------------------------
+#B.No.of Specialties variable : variable: Prscrbr_Type 
+
+blank_count_spcl_2021 <- sum(AS_CMS_PA_2021$Prscrbr_Type == "") # no blanks
+missing_count_spcls_2021 <- sum(is.na(AS_CMS_PA_2021$Prscrbr_Type)) # 0 missing
+
+tot_specialties_1_2021 <- prscbr_summary_2021 %>% #(n=81) before collapsing specialties
+  summarize(Total_Unique_Specialties = n_distinct(Prscrbr_Type))
+
+prscbr_summary_2021 <- prscbr_summary_2021 %>% 
+  mutate(Prscrbr_Type_new = case_when(Prscrbr_Type == "Dentist"~ "Dentistry",
+                                      Prscrbr_Type %in% c("Colon & Rectal Surgery",
+                                                          "Colorectal Surgery (Proctology)") ~ "Colorectal Surgery",
+                                      Prscrbr_Type %in% c("Maxillofacial Surgery",
+                                                          "Oral & Maxillofacial Surgery",
+                                                          "Oral Surgery (Dentist only)") ~ "Oral and Maxillofacial Surgery",
+                                      Prscrbr_Type %in% c("Neurological Surgery",
+                                                          "Neurosurgery") ~  "Neurosurgery",
+                                      Prscrbr_Type %in% c("Thoracic Surgery",
+                                                          "Thoracic Surgery (Cardiothoracic Vascular Surgery)") ~ "Thoracic Surgery",
+                                      Prscrbr_Type %in% c("Orthopaedic Surgery",
+                                                          "Orthopedic Surgery") ~ "Orthopaedic Surgery",
+                                      # Prscrbr_Type %in% c("Pediatric Medicine",
+                                      #                     "Pediatrics")~ "Pediatrics",
+                                      Prscrbr_Type %in% c("Physical Medicine & Rehabilitation",
+                                                          "Physical Medicine and Rehabilitation",
+                                                          "Rehabilitation Practitioner")~ "Physical Medicine & Rehabilitation",
+                                      Prscrbr_Type %in% c("Plastic and Reconstructive Surgery",
+                                                          "Plastic Surgery") ~ "Plastic and Reconstructive Surgery",
+                                      Prscrbr_Type %in% c("Neuropsychiatry",
+                                                          "Psychiatry & Neurology") ~ "Neuropsychiatry",
+                                      # Prscrbr_Type %in% c("Medical Genetics and Genomics",
+                                      #                     "Medical Genetics, Ph.D. Medical Genetics") ~ "Medical Genetics and Genomics",
+                                      Prscrbr_Type %in% c("Family Medicine",
+                                                          "Family Practice")~ "Family Medicine",
+                                      Prscrbr_Type %in% c("Radiology",
+                                                          "Diagnostic Radiology",
+                                                          "Interventional Radiology") ~ "Radiology",
+                                      Prscrbr_Type %in% c("Gynecological Oncology",
+                                                          "Hematology-Oncology",
+                                                          "Medical Oncology",
+                                                          "Radiation Oncology")~ "Oncology",
+                                      Prscrbr_Type %in% c("Pain Management",
+                                                          " Pain Medicine")~ "Pain Medicine",
+                                      Prscrbr_Type %in% c("Adult Congenital Heart Disease",
+                                                          "Advanced Heart Failure and Transplant Cardiology",
+                                                          "Cardiology",
+                                                          "Clinical Cardiac Electrophysiology",
+                                                          "Interventional Cardiology")~ "Cardiology", T~ Prscrbr_Type)) 
+
+
+tot_specialties_2_2021 <- prscbr_summary_2021 %>% #(n=67)
+  summarize(Specialties = n_distinct(Prscrbr_Type_new))  # after collapsing specialties and without excluding nurse practioners and Physician Assistant
+#-----------------------------------------------------------------------------------------------------
+
+#C.No. of Beneficiaries(n= 6891653); variable :Tot_Benes, Counts fewer than 11 are suppressed and are indicated by a blank.(inconsitencies- commas, blanks)
+
+blank_count_bene_2021 <- sum(AS_CMS_PA_2021$Tot_Benes == "") # 6890 blanks= suppressed
+missing_count_bene_2021 <- sum(is.na(AS_CMS_PA_2021$Tot_Benes)) # 0 missing
+
+Total_benefi_2021 <- prscbr_summary_2021 %>% #(n=6891653)
+  summarize(Beneficiaries = sum(Tot_Benes))
+
+#Notes by Analyst (QJ):: 6890 blanks(suppressed) were in raw dataset been converted to missing and later to numeric 5 as per requirements,and are excluded from study
+#-----------------------------------------------------------------------------------------------------
+
+#D. No. of total antibiotic claims (n=2,445,394); variable :Antbtc_Tot_Clms ,inconsistencies: (0, commas, blanks)
+
+#The Antbtc_Tot_Clms is suppressed when Antbtc_Tot_Clms is between 1-10, <11 = blanks = numeric 1
+# A blank indicates the value is suppressed.
+
+blank_count_Anbtcclms_2021 <- sum(AS_CMS_PA_2021$Antbtc_Tot_Clms == "") # n=19342 blanks= suppressed
+missing_count_Anbtcclms_2021 <- sum(is.na(AS_CMS_PA_2021$Antbtc_Tot_Clms)) # 0
+
+Total_Anbtcclms_2021 <- prscbr_summary_2021 %>% 
+  summarize(`Antibiotic Claims` = sum(Antbtc_Tot_Clms)) #na.rm = TRUE
+
+Total_Anbtcclms_new_2021 <- Total_Anbtcclms_2021 %>% 
+  mutate(`Antibiotic Claims` = format(`Antibiotic Claims`, big.mark=","))# formatted to include common in numbers wherever required
+
+#Notes by Analyst (QJ): 19342 blanks(suppressed) were in raw dataset been converted to missing and later to numeric 1 as per requirements,and are excluded from study
+#-----------------------------------------------------------------------------------------------------
+
+#Ignore: E. No.of prescriptions; variable:Tot_Clms (n=60058340)
+
+blank_count_totclms <- sum(AS_CMS_PA_2021$Tot_Clms == "") # no blanks
+missing_count_totclms_2021 <- sum(is.na(AS_CMS_PA_2021$Tot_Clms)) # 0 missing
+
+total_claims_2021 <- prscbr_summary_2021 %>%
+  summarize(`Total Claims` = sum(Tot_Clms)) # no NAs so na.rm = TRUE not required
+
+#Ignore: calculating percentage of antibiotic claims from total prescriptions 
+
+percentage_of_antibiotic_claims_2021 <- (Total_Anbtcclms_2021 / total_claims_2021) * 100
+
+percent_of_antibiotic_claims_2021 <-percentage_of_antibiotic_claims_2021 %>% 
+  mutate(percent_antibiotics=paste0(round(`Antibiotic Claims`, 1),"%"))
+
+#-----------------------------------------------------------------------------------------------------
+
+#F.Overall Antibiotic Prescription rate for PA (after excluding suppressed values )
+#calculation: (Total_Anbtcclms_2020 / Total_benefi_2020)* 1000 (No. of outpatient antibiotic prescriptions per 1,000 
+#beneficiaries)
+
+antibiotic_prescription_rate_2021 <- (Total_Anbtcclms_2021 / Total_benefi_2021)* 1000 
+
+antibiotic_prescription_rate_2021 <- antibiotic_prescription_rate_2021 %>% 
+  rename(`Antibiotic Prescription Rate 2021`= `Antibiotic Claims`)  
+
+antibiotic_prescription_rate_2021 <-antibiotic_prescription_rate_2021 %>% #(value=354.8)
+  mutate(`Antibiotic Prescription Rate 2021`=round(`Antibiotic Prescription Rate 2021`,1))
+
+# Column binding all above dataframes to generate table 1 in the report (summary of prescribers)
+
+
+prescriber_summary_2021 <- cbind(Prescribers_2021,tot_specialties_2_2021,Total_benefi_2021,Total_Anbtcclms_2021,antibiotic_prescription_rate_2021,total_claims_2021) %>% 
+  pivot_longer(cols= Prescribers:`Total Claims`,
+               names_to = "category",values_to = "count")
+
+#-----------------------------------------------------------------------------------------------------
+
+#SECTION 2
+
+#2. Top 5 Specialties; variables:(Prscrbr_Type,Tot_Clms,Antbtc_Tot_Clms,Prscrbr_RUCA,Prscrbr_RUCA_Desc)
+
+
+# Excluding specialties <100 prescribers
+specialt_name_2021_lessthan_100 <- prscbr_summary_2021 %>% #(n=23952)
+  select(Prscrbr_Type,Tot_Clms,Tot_Benes,Antbtc_Tot_Clms,Prscrbr_RUCA,Prscrbr_RUCA_Desc,Prscrbr_zip5,Prscrbr_Gndr,Prscrbr_Type_new)%>% 
+  count(Prscrbr_Type_new, name = "Specialty_Counts") %>% 
+  filter(Specialty_Counts >= 100)
+
+
+
+# excluding Nurse Practitioner and Physician Assistant
+specialt_name_2021 <- prscbr_summary_2021 %>% 
+  select(Prscrbr_Type,Tot_Benes,Prscrbr_zip5,Tot_Clms,Antbtc_Tot_Clms,Prscrbr_RUCA,Prscrbr_RUCA_Desc,Prscrbr_Gndr,Prscrbr_Type_new) %>% 
+  filter(!(Prscrbr_Type_new %in% c("Nurse Practitioner","Physician Assistant"))) 
+
+#  total distinct specialties and their counts
+
+specialty_count_1_2021 <- specialt_name_2021 %>% #(n=65)
+  count(Prscrbr_Type_new, name = "Specialty_Counts") #(nurse and physician assistant were excluded)
+
+# total count for all specialties
+
+specialty_count_1a_2021 <-specialty_count_1_2021  %>% # (n=24164)
+  summarize(total_spcl_count = sum(Specialty_Counts,na.rm = TRUE))
+
+specialty_count_1a_2021
+
+
+# table:2
+
+Top_5_specl_2021 <- specialt_name_2021 %>% 
+  filter(Prscrbr_Type_new %in% c("Dentistry","Infectious Disease","Oral and Maxillofacial Surgery","Plastic and Reconstructive Surgery","Urology")) %>% 
+  group_by(Prscrbr_Type_new) %>%
+  left_join(specialty_count_1_2021,by= "Prscrbr_Type_new") %>% 
+  filter(Specialty_Counts >= 100) %>%                                
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000) %>% 
+  #arrange(desc(AB_Prescp_rate)) %>%  
+  #top_n(5) %>% 
+  left_join(specialty_count_1_2021,by= "Prscrbr_Type_new") %>% 
+  relocate(Specialty_Counts,.after = Prscrbr_Type_new) %>% 
+  relocate(Tot_Benes, .after = Antbtc_Tot_Clms) %>% 
+  mutate(AB_Prescp_rate=round(AB_Prescp_rate)) %>% 
+  rename(SPECIALTY= Prscrbr_Type_new,
+         `NUMBER OF SPECIALISTS`= Specialty_Counts,
+         `NUMBER OF ANTIBIOTIC CLAIMS`=Antbtc_Tot_Clms,
+         `NUMBER OF BENEFICIARIES`=Tot_Benes,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE`= AB_Prescp_rate)
+
+
+
+#---------------------------------------------------------------------------------------
+
+# SECTION 3
+#3.Top 5 by setting-Rural and Urban; variables:(Prscrbr_Type,Tot_Clms,Antbtc_Tot_Clms,Prscrbr_RUCA,Prscrbr_RUCA_Desc)
+
+
+CMS_2021_zip_pack <- specialt_name_2021 %>% #(n= 24164)
+  mutate(Prscrbr_zip5 = as.numeric(Prscrbr_zip5))
+
+#leftjoin
+CMS_zipcountypack_2021_merge <- CMS_2021_zip_pack %>% #(n=24164)
+  left_join(PA_zipcode_merge, by="Prscrbr_zip5")
+
+missing_zipcodepack_merge_2021 <- sum(is.na(CMS_zipcountypack_2021_merge$zipcode)) #0
+missing_countypack_merge_2021 <- sum(is.na(CMS_zipcountypack_2021_merge$County)) # 14 
+
+CMS_zip_rate_2021 <- CMS_zipcountypack_2021_merge %>% #(n=24164)
+  mutate(AB_rate_2021 =(Antbtc_Tot_Clms/Tot_Benes)* 1000,
+         County = gsub(" County", "", County)) %>% 
+  filter(!(is.na(County))) #(n=24150)
+
+
+counties_settings <- read_excel("C:/Users/c-qjahan/Downloads/Antimicrobial Stewardship CMS analysis/List of Counties settings 2022.xlsx")
+
+top_5_settings_2021 <-CMS_zip_rate_2021 %>% 
+  filter(Prscrbr_Type_new %in% c("Infectious Disease","Dentistry","Oral and Maxillofacial Surgery","Plastic and Reconstructive Surgery","Urology")) %>%
+  left_join(counties_settings, by = c("County" = "County Name")) %>% 
+  group_by(Prscrbr_Type_new,settings = `Rural/ Urban`) %>%
+  group_by(Prscrbr_Type_new,settings) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (sum(Antbtc_Tot_Clms ) /sum(Tot_Benes)) * 1000,
+    AB_Prescp_rate=round(AB_Prescp_rate),
+    #providers = n()
+  ) %>%
+  arrange(desc(AB_Prescp_rate)) %>%
+  ungroup %>% 
+  pivot_wider(
+    names_from = settings,
+    values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate)#,providers)
+  ) %>% 
+  rename(SPECIALTY = Prscrbr_Type_new,
+         `NUMBER OF ANTIBIOTIC CLAIMS RURAL` = Antbtc_Tot_Clms_Rural,
+         `NUMBER OF TOTAL BENEFICIARIES RURAL` = Tot_Benes_Rural,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE RURAL` = AB_Prescp_rate_Rural,
+         `NUMBER OF ANTIBIOTIC CLAIMS URBAN` = Antbtc_Tot_Clms_Urban,
+         `NUMBER OF TOTAL BENEFICIARIES URBAN` = Tot_Benes_Urban,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE URBAN` = AB_Prescp_rate_Urban) %>% 
+  select(1,4,2,6,5,3,7)
+
+
+
+#################################################################################################################################################################
+
+#Before excluding Nurse practioners and physician assistant
+# 
+# blank_count_urban_rural_2021 <- sum(AS_CMS_PA_2021$Prscrbr_RUCA == "",na.rm =T) # no blanks
+# other_count_urban_rural_2021 <- sum(AS_CMS_PA_2021$Prscrbr_RUCA == 99,na.rm =T) # 4 99's
+# missing_count__urban_rural_2021 <- sum(is.na(AS_CMS_PA_2021$Prscrbr_RUCA)) # 12 missing
+# 
+# #After excluding Nurse practioners and physician assistant
+# 
+# blank_count_urban_rural_a_2021 <- sum(specialt_name_2021$Prscrbr_RUCA == "",na.rm=T) # no blanks
+# other_count_urban_rural_a_2021 <- sum(specialt_name_2021$Prscrbr_RUCA == 99,na.rm =T) # 1 99's
+# missing_count_urban_rural_a_2021 <- sum(is.na(specialt_name_2021$Prscrbr_RUCA)) # 7 missing
+# 
+# 
+# # collapsing into rural and urban based on RUCA codes
+# urban_rural_2021 <- specialt_name_2021 %>% #(n=24164)
+#   mutate(Prscrbr_RUCA= case_when(Prscrbr_RUCA %in% c(1, 1.1)~ 1,
+#                                  #Prscrbr_RUCA %in% c(2, 2.1)~ 2,
+#                                  Prscrbr_RUCA %in% c(4, 4.1)~4,
+#                                  Prscrbr_RUCA %in% c(7, 7.1)~7,
+#                                  Prscrbr_RUCA %in% c(10, 10.1)~10,
+#                                  T~ Prscrbr_RUCA)) %>%  
+#   filter(!is.na(Prscrbr_RUCA)&Prscrbr_RUCA!= 99) 
+
+# Notes by Analyst (QJ):Prscrbr_RUCA: 99's =1; NAs=7 , total 8 excluded (24164-8= 24156)
+# 
+# top_5_settings_2021 <-urban_rural_2021 %>% 
+#   filter(Prscrbr_Type_new %in% c("Infectious Disease","Dentistry","Oral and Maxillofacial Surgery","Plastic and Reconstructive Surgery","Urology")) %>%
+#   mutate(settings = case_when(Prscrbr_RUCA %in% c(1,2,3)~ "Urban",
+#                               Prscrbr_RUCA %in% c(4,5,6,7,8,9,10)~ "Rural",
+#                               T~ "other")) %>% 
+#   group_by(Prscrbr_Type_new,settings) %>%
+#   summarise(
+#     Tot_Benes = sum(Tot_Benes),
+#     Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+#     AB_Prescp_rate = (sum(Antbtc_Tot_Clms ) /sum(Tot_Benes)) * 1000,
+#     AB_Prescp_rate=round(AB_Prescp_rate),
+#     #providers = n()
+#   ) %>%
+# arrange(desc(AB_Prescp_rate)) %>%
+#   ungroup %>% 
+#   pivot_wider(
+#     names_from = settings,
+#     values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate)#,providers)
+#   ) %>% 
+#   rename(SPECIALTY = Prscrbr_Type_new,
+#          `NUMBER OF ANTIBIOTIC CLAIMS RURAL` = Antbtc_Tot_Clms_Rural,
+#          `NUMBER OF TOTAL BENEFICIARIES RURAL` = Tot_Benes_Rural,
+#          `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE RURAL` = AB_Prescp_rate_Rural,
+#          `NUMBER OF ANTIBIOTIC CLAIMS URBAN` = Antbtc_Tot_Clms_Urban,
+#          `NUMBER OF TOTAL BENEFICIARIES URBAN` = Tot_Benes_Urban,
+#          `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE URBAN` = AB_Prescp_rate_Urban) %>% 
+#   select(1,4,2,6,5,3,7)
+
+
+#############################################################################################################################################################
+
+
+
+
+#-----
+#SECTION 4
+#Table 4: Top 5 by Prescriber Gender
+
+top_5_gender_2021 <-specialt_name_2021 %>% 
+  filter(Prscrbr_Type_new %in% c("Infectious Disease","Dentistry","Oral and Maxillofacial Surgery","Plastic and Reconstructive Surgery","Urology")
+  ) %>%
+  mutate(Gender = case_when(Prscrbr_Gndr == "F" ~ "Female",
+                            Prscrbr_Gndr == "M" ~ "Male",
+                            T~ "other")) %>% 
+  group_by(Prscrbr_Type_new,Gender) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000,
+    AB_Prescp_rate=round(AB_Prescp_rate),
+    # providers = n()
+  ) %>%
+  arrange(desc(AB_Prescp_rate)) %>%
+  pivot_wider(
+    names_from = Gender,
+    values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate))%>% #, providers)
+  rename(SPECIALTY = Prscrbr_Type_new,
+         `NUMBER OF ANTIBIOTIC CLAIMS MALE` = Antbtc_Tot_Clms_Male,
+         `NUMBER OF TOTAL BENEFICIARIES MALE` = Tot_Benes_Male,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE MALE` =AB_Prescp_rate_Male,
+         `NUMBER OF ANTIBIOTIC CLAIMS FEMALE` = Antbtc_Tot_Clms_Female,
+         `NUMBER OF TOTAL BENEFICIARIES FEMALE` = Tot_Benes_Female,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE FEMALE` = AB_Prescp_rate_Female) %>% 
+  select(1,4,2,6,5,3,7)
+
+
+
+
+
+
+ ID_gender_2021 <-specialt_name_2021 %>% 
+  filter(Prscrbr_Type_new %in% c("Infectious Disease")) %>%
+  mutate(Gender = case_when(
+                            Prscrbr_Gndr == "M" ~ "Male",
+                            T~ "other"),
+         Prscrbr_Type_new = case_when(Prscrbr_Type_new == "Infectious Disease" ~ "Infectious Disease_2021", T~ Prscrbr_Type_new)) %>% 
+   filter(Gender == "Male") %>% 
+  group_by(Prscrbr_Type_new,Gender) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms) /(Tot_Benes) * 1000,
+    AB_Prescp_rate =round(AB_Prescp_rate)
+    #providers = n()
+  ) %>%
+  arrange(desc(AB_Prescp_rate)) %>%
+  pivot_wider(
+    names_from = Gender,
+    values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate))
+ 
+   
+ ID_gender_2021_F <-specialt_name_2021 %>% 
+  filter(Prscrbr_Type_new %in% c("Infectious Disease")) %>%
+  mutate(Gender = case_when(
+                            Prscrbr_Gndr == "F" ~ "Female",
+                            T~ "other"),
+         Prscrbr_Type_new = case_when(Prscrbr_Type_new == "Infectious Disease" ~ "Infectious Disease_2021", T~ Prscrbr_Type_new)) %>% 
+   filter(Gender == "Female") %>% 
+  group_by(Prscrbr_Type_new,Gender) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000,
+    AB_Prescp_rate =round(AB_Prescp_rate)
+    #providers = n()
+  ) %>%
+  arrange(desc(AB_Prescp_rate)) %>%
+  pivot_wider(
+    names_from = Gender,
+    values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate))   
+
+#--------AS_2022 (n= 62,959)--------------------------------------------------------------------------------------------------------
+
+# Import raw CSV data
+
+Medicare_Part_D_2022_PA_file <- "C:/Users/c-qjahan/Downloads/Antimicrobial Stewardship CMS analysis/Medicare_Part_D_Prescribers_by_Provider_2022.csv"
+
+AS_CMS_PA_2022<- read.csv(Medicare_Part_D_2022_PA_file)
+
+# Data Cleaning and transformation (missingvalues,blanks,duplicates,mutations,pivoting,binding, summarize, grouping) and
+# calculating counts required for tables
+
+Prescribers_F_2022 <- sum(is.na(AS_CMS_PA_2022$Prscrbr_First_Name))    # 0
+Prescribers_F_B_2022 <- sum((AS_CMS_PA_2022$Prscrbr_First_Name == "")) # 0 blank
+Prescribers_L_2022 <- sum(is.na(AS_CMS_PA_2022$Prscrbr_Last_Org_Name)) # 0
+Prescribers_L_B_2022 <- sum((AS_CMS_PA_2022$Prscrbr_Last_Org_Name == "")) # 0
+duplicates_NPI_2022 <- AS_CMS_PA_2022$Prscrbr_NPI[duplicated(AS_CMS_PA_2022$Prscrbr_NPI)] # empty
+duplicates_NPI_2022 <- AS_CMS_PA_2022 %>% 
+group_by(Prscrbr_NPI) %>% 
+filter(n()>1) # 0
+
+# Calculating total No.of Prescribers (n= 62959); variables :Prscrbr_First_Name, Prscrbr_Last_Org_Name
+
+Total_prescribers_2022 <- AS_CMS_PA_2022 %>% 
+summarise(Total_Prescribers_2022 = sum(!is.na(Prscrbr_First_Name)))
+
+#num_rows <- dim(Total_prescribers_2022)[1]
+
+Total_prescribers_new_2022 <- Total_prescribers_2022 %>% 
+  mutate(Total_Prescribers_2022 = format(Total_Prescribers_2022, big.mark=","))# formatted to include comma 
+#------------------------------------------------------------------------------------------------------------------------------------
+
+# SECTION 1
+#Table 1. Summary of Prescribers
+
+prscbr_summary_2022 <- AS_CMS_PA_2022 %>% #(n= 62,959)
+select(Prscrbr_NPI,Prscrbr_Last_Org_Name,Prscrbr_First_Name,Prscrbr_Gndr,Prscrbr_Ent_Cd,Prscrbr_State_Abrvtn,Prscrbr_RUCA,Prscrbr_RUCA_Desc,Prscrbr_Type,Tot_Clms,Tot_Benes,Antbtc_Tot_Clms,Prscrbr_City,Prscrbr_zip5) %>% 
+  mutate(Tot_Clms = as.numeric(str_remove_all(Tot_Clms, ",")),
+         Tot_Benes = case_when(Tot_Benes == ""~ NA_character_, T~Tot_Benes),  #blanks refer to suppressed values <11 and converted to missing and later to numeric 5
+         Tot_Benes = as.numeric(str_remove_all(Tot_Benes, ",")),
+         Tot_Benes = case_when(is.na(Tot_Benes)~5, T~Tot_Benes),
+         Antbtc_Tot_Clms = case_when(Antbtc_Tot_Clms == ""~ NA_character_, T~Antbtc_Tot_Clms),
+         Antbtc_Tot_Clms = as.numeric(str_remove_all(Antbtc_Tot_Clms, ",")),
+         Antbtc_Tot_Clms = case_when(is.na(Antbtc_Tot_Clms) ~ 1,
+                                     T~Antbtc_Tot_Clms)) %>% 
+  filter(!(Antbtc_Tot_Clms %in% c(0,1))) %>% # # excluded values < 11 which are assumed to be suppressed values
+  filter(!(Tot_Benes %in% 5)) # excluded values < 11 which are assumed to be suppressed values
+
+#------------------------------------------------------------------------------------------------------------------------------------
+
+# Data cleaning
+Prescribers_benes_B_2022 <- sum((AS_CMS_PA_2022$Tot_Benes == "")) #(7031-- 222)
+Prescribers_Anbtc_B_2022 <- sum((AS_CMS_PA_2022$Antbtc_Tot_Clms == "")) #(19702(1), 9211(0))
+
+totclms_range <- range(prscbr_summary_2022$Tot_Clms) #(11, 267716)
+benes_range <- range(prscbr_summary_2022$Tot_Benes) # (5 (suppressed) , 60714)
+Antbtc_range <- range(prscbr_summary_2022$Antbtc_Tot_Clms) # (0, 1 (supp), 3809)
+#------------------------------------------------------------------------------------------------------------------------------------
+
+#A. No.of Prescribers; variable:Prscrbr_First_Name (n=33824)
+
+Prescribers_2022 <- prscbr_summary_2022 %>% 
+  summarise(Prescribers = sum(!is.na(Prscrbr_First_Name)))
+
+Prescribers_new_2022 <- Prescribers_2022 %>% 
+  mutate(Prescribers = format(Prescribers, big.mark=","))# formatted to include common in numbers wherever required
+
+# calculating percentage of prescribers from total prescribers after excluding the ones with <11 antibiotic claims
+
+percentage_of_prescribers_2022 <- (Prescribers_2022 / Total_prescribers_2022) * 100
+
+percent_of_prescribers_2022 <-percentage_of_prescribers_2022%>% 
+  mutate(percent_prescribers=paste0(round(Prescribers), "%"))
+
+#------------------------------------------------------------------------------------------------------------------------------------
+
+#B.No. of Specialties; variable: Prscrbr_Type 
+
+blank_count_spcl_2022 <- sum(prscbr_summary_2022$Prscrbr_Type == "") # no blanks
+missing_spcls_2022 <- sum(is.na(prscbr_summary_2022$Prscrbr_Type)) # 0 missing
+
+tot_specialties_1_2022 <- prscbr_summary_2022 %>% #(n=83) # before collapsing specialties
+  summarize(Specialties = n_distinct(Prscrbr_Type)) 
+print(tot_specialties_1_2022)
+
+#------------------------------ LIST OF 83 SPECIALTIES----------------------------------------------
+tot_specialties_names_2022 <- prscbr_summary_2022 %>%
+  distinct(Prscrbr_Type)
+
+# table to check if old and new names were recoded correctly
+tot_specialties_oldnew_2022 <- tot_specialties_names_2022 %>% 
+  mutate(Prscrbr_Type_new = case_when(Prscrbr_Type == "Dentist"~ "Dentistry",
+                                      
+                                      Prscrbr_Type %in% c("Colon & Rectal Surgery",
+                                                          "Colorectal Surgery (Proctology)") ~ "Colorectal Surgery",
+                                      Prscrbr_Type %in% c("Maxillofacial Surgery",
+                                                          "Oral & Maxillofacial Surgery",
+                                                          "Oral Surgery (Dentist only)") ~ "Oral and Maxillofacial Surgery",
+                                      Prscrbr_Type %in% c("Neurological Surgery",
+                                                          "Neurosurgery") ~  "Neurosurgery",
+                                      Prscrbr_Type %in% c("Thoracic Surgery",
+                                                          "Thoracic Surgery (Cardiothoracic Vascular Surgery)") ~ "Thoracic Surgery",
+                                      Prscrbr_Type %in% c("Orthopaedic Surgery",
+                                                          "Orthopedic Surgery") ~ "Orthopaedic Surgery",
+                                      Prscrbr_Type %in% c("Pediatric Medicine",
+                                                          "Pediatrics")~ "Pediatrics",
+                                      Prscrbr_Type %in% c("Physical Medicine & Rehabilitation",
+                                                          "Physical Medicine and Rehabilitation",
+                                                          "Rehabilitation Practitioner")~ "Physical Medicine & Rehabilitation",
+                                      Prscrbr_Type %in% c("Plastic and Reconstructive Surgery",
+                                                          "Plastic Surgery") ~ "Plastic and Reconstructive Surgery",
+                                      Prscrbr_Type %in% c("Neuropsychiatry",
+                                                          "Psychiatry & Neurology") ~ "Neuropsychiatry",
+                                      Prscrbr_Type %in% c("Medical Genetics and Genomics",
+                                                          "Medical Genetics, Ph.D. Medical Genetics") ~ "Medical Genetics and Genomics",
+                                      Prscrbr_Type %in% c("Family Medicine",
+                                                          "Family Practice")~ "Family Medicine",
+                                      Prscrbr_Type %in% c("Radiology",
+                                                          "Diagnostic Radiology",
+                                                          "Interventional Radiology") ~ "Radiology",
+                                      Prscrbr_Type %in% c("Gynecological Oncology",
+                                                          "Hematology-Oncology",
+                                                          "Medical Oncology",
+                                                          "Radiation Oncology")~ "Oncology",
+                                      Prscrbr_Type %in% c("Pain Management",
+                                                          " Pain Medicine")~ "Pain Medicine",
+                                      Prscrbr_Type %in% c("Adult Congenital Heart Disease",
+                                                          "Advanced Heart Failure and Transplant Cardiology",
+                                                          "Cardiology",
+                                                          "Clinical Cardiac Electrophysiology",
+                                                          "Interventional Cardiology")~ "Cardiology", T~ Prscrbr_Type))
+#--------------------------------------------------------------------------------------------------------------------------------
+prscbr_summary_2022 <- prscbr_summary_2022 %>% 
+  mutate(Prscrbr_Type_new = case_when(Prscrbr_Type == "Dentist"~ "Dentistry",
+                                      
+                                      Prscrbr_Type %in% c("Colon & Rectal Surgery",
+                                                          "Colorectal Surgery (Proctology)") ~ "Colorectal Surgery",
+                                      Prscrbr_Type %in% c("Maxillofacial Surgery",
+                                                          "Oral & Maxillofacial Surgery",
+                                                          "Oral Surgery (Dentist only)") ~ "Oral and Maxillofacial Surgery",
+                                      Prscrbr_Type %in% c("Neurological Surgery",
+                                                          "Neurosurgery") ~  "Neurosurgery",
+                                      Prscrbr_Type %in% c("Thoracic Surgery",
+                                                          "Thoracic Surgery (Cardiothoracic Vascular Surgery)") ~ "Thoracic Surgery",
+                                      Prscrbr_Type %in% c("Orthopaedic Surgery",
+                                                          "Orthopedic Surgery") ~ "Orthopaedic Surgery",
+                                      Prscrbr_Type %in% c("Pediatric Medicine",
+                                                          "Pediatrics")~ "Pediatrics",
+                                      Prscrbr_Type %in% c("Physical Medicine & Rehabilitation",
+                                                          "Physical Medicine and Rehabilitation",
+                                                          "Rehabilitation Practitioner")~ "Physical Medicine & Rehabilitation",
+                                      Prscrbr_Type %in% c("Plastic and Reconstructive Surgery",
+                                                          "Plastic Surgery") ~ "Plastic and Reconstructive Surgery",
+                                      Prscrbr_Type %in% c("Neuropsychiatry",
+                                                          "Psychiatry & Neurology") ~ "Neuropsychiatry",
+                                      Prscrbr_Type %in% c("Medical Genetics and Genomics",
+                                                          "Medical Genetics, Ph.D. Medical Genetics") ~ "Medical Genetics and Genomics",
+                                      Prscrbr_Type %in% c("Family Medicine",
+                                                          "Family Practice")~ "Family Medicine",
+                                      Prscrbr_Type %in% c("Radiology",
+                                                          "Diagnostic Radiology",
+                                                          "Interventional Radiology") ~ "Radiology",
+                                      Prscrbr_Type %in% c("Gynecological Oncology",
+                                                          "Hematology-Oncology",
+                                                          "Medical Oncology",
+                                                          "Radiation Oncology")~ "Oncology",
+                                      Prscrbr_Type %in% c("Pain Management",
+                                                          " Pain Medicine")~ "Pain Medicine",
+                                      Prscrbr_Type %in% c("Adult Congenital Heart Disease",
+                                                          "Advanced Heart Failure and Transplant Cardiology",
+                                                          "Cardiology",
+                                                          "Clinical Cardiac Electrophysiology",
+                                                          "Interventional Cardiology")~ "Cardiology", T~ Prscrbr_Type))
+
+
+tot_specialties_2_2022 <- prscbr_summary_2022 %>% 
+  summarize(Specialties = n_distinct(Prscrbr_Type_new)) #(n=68) # after collapsing specialites and without excluding nurse practioners and Physician Assistant
+#------------------------------------------------------------------------------------------------------------------------------------
+
+#C. No. of Beneficiaries (n=7407733) ; variable :Tot_Benes, Counts fewer than 11 are suppressed and are indicated by a blank.(inconsitencies- commas, blanks)
+#Counts fewer than 11 are suppressed and are indicated by a blank.
+
+blank_count_bene_2022 <- sum(AS_CMS_PA_2022$Tot_Benes == "") # 7031 blanks = suppressed
+missing_count_bene_2022 <- sum(is.na(AS_CMS_PA_2022$Tot_Benes)) # 0 missing
+
+Total_benefi_2022 <- prscbr_summary_2022 %>%
+  summarize(Beneficiaries = sum(Tot_Benes))
+
+# Total_benefi_2022 <- Total_benefi_2022 %>% 
+#   mutate(Beneficiaries = format(Beneficiaries, big.mark=","))
+
+#Notes by Analyst (QJ):: 7031 blanks(suppressed) were in raw dataset been converted to missing and later to numeric 5 as per requirements,and are excluded from study(N= 229; 32428-229 = 32199)
+#------------------------------------------------------------------------------------------------------------------------------------
+
+#D. No. of total antibiotic claims(n=2708234); variable :Antbtc_Tot_Clms 
+#The Antbtc_Tot_Clms is suppressed when Antbtc_Tot_Clms is between 1 and 10.
+#A blank indicates the value is suppressed.
+
+blank_count_Anbtcclms_2022 <- sum(AS_CMS_PA_2022$Antbtc_Tot_Clms == "") #19702
+missing_count_Anbtcclms_2022 <- sum(is.na(AS_CMS_PA_2022$Antbtc_Tot_Clms)) # 0
+
+Total_Anbtcclms_2022 <- prscbr_summary_2022 %>%
+  summarize(`Antibiotic Claims` = sum(Antbtc_Tot_Clms,na.rm = TRUE))
+
+Total_Anbtcclms_new_2022 <- Total_Anbtcclms_2022 %>% 
+  mutate(`Antibiotic Claims` = format(`Antibiotic Claims`, big.mark=","))# formatted to include common in numbers wherever required
+
+#Notes by Analyst (QJ): 19236 blanks(suppressed) were in raw dataset been converted to missing and later to numeric 1 as per requirements,and are
+#excluded from study-#(n=2445970-19236 =2426734)
+#------------------------------------------------------------------------------------------------------------------------------------
+
+#Ignore: E. No.of prescriptions; variable:Tot_Clms (n=62014790)
+
+blank_count_totclms_2022 <- sum(prscbr_summary_2022$Tot_Clms == "") # no blanks
+missing_count_totclms_2022 <- sum(is.na(AS_CMS_PA_2022$Tot_Clms)) # 0 missing
+total_claims_2022 <- prscbr_summary_2022 %>%
+  summarize(`Total Claims` = sum(Tot_Clms)) # no NAs so na.rm = TRUE not required
+# total_claims_2022 <- total_claims_2022 %>% 
+#   mutate(`Total Claims` = format(`Total Claims`, big.mark=","))
+
+# calculating percentage of antibiotic claims from total prescriptions 
+
+percentage_of_antibiotic_claims_2022 <- (Total_Anbtcclms_2022 / total_claims_2022) * 100
+
+percent_of_antibiotic_claims_2022 <-percentage_of_antibiotic_claims_2022 %>% 
+  mutate(percent_antibiotics=paste0(round(`Antibiotic Claims`,1), "%"))
+
+#------------------------------------------------------------------------------------------------------------------------------------
+
+#calculating overall Antibiotic Prescription rate for PA after excluding suppressed values 
+#for both antibiotic claims and benefs (No. of outpatient antibiotic prescriptions per 1,000 
+#beneficiaries)
+
+antibiotic_prescription_rate_2022 <- (Total_Anbtcclms_2022 / Total_benefi_2022)* 1000 
+
+antibiotic_prescription_rate_2022 <- antibiotic_prescription_rate_2022 %>% 
+  rename(`Antibiotic Prescription Rate 2022`= `Antibiotic Claims`)  
+
+antibiotic_prescription_rate_2022 <-antibiotic_prescription_rate_2022 %>% #(value=365.6)
+  mutate(`Antibiotic Prescription Rate 2022`=round(`Antibiotic Prescription Rate 2022`,1))
+
+# Column binding all above dataframes to generate table 1 in the report (summary of prescribers)
+
+prescriber_summary_2022 <- cbind(Prescribers_2022,tot_specialties_2_2022,Total_benefi_2022,Total_Anbtcclms_2022,antibiotic_prescription_rate_2022, total_claims_2022) %>% 
+  pivot_longer(cols= Prescribers:`Total Claims`,
+               names_to = "Category",values_to = "Count")
+
+#------------------------------------------------------------------------------------------------------------------------------------
+
+#SECTION 2
+
+#Table 2. Top 5 Specialties; variables:(Prscrbr_Type,Tot_Clms,Antbtc_Tot_Clms,Prscrbr_RUCA,Prscrbr_RUCA_Desc)
+
+# excluding specialties with less than 100 providers
+
+specialt_name_2022_lessthan_100 <- prscbr_summary_2022 %>% #(n=23952)
+  select(Prscrbr_Type,Tot_Clms,Tot_Benes,Antbtc_Tot_Clms,Prscrbr_RUCA,Prscrbr_RUCA_Desc,Prscrbr_zip5,Prscrbr_Gndr,Prscrbr_Type_new)%>% 
+  count(Prscrbr_Type_new, name = "Specialty_Counts") %>% 
+  filter(Specialty_Counts >= 100)
+
+# excluding Nurse Practitioner and Physician Assistant
+
+specialt_name_2022 <- prscbr_summary_2022 %>% #(n=24420)
+  select(Prscrbr_Type,Tot_Clms,Tot_Benes,Antbtc_Tot_Clms,Prscrbr_RUCA,Prscrbr_RUCA_Desc,Prscrbr_Gndr,Prscrbr_Type_new,Prscrbr_City,Prscrbr_zip5) %>% 
+  filter(!(Prscrbr_Type_new %in% c("Nurse Practitioner","Physician Assistant"))) 
+
+# total distinct specialties and their counts
+
+specialty_count_1_2022 <- specialt_name_2022 %>% #(n=66)
+  count(Prscrbr_Type_new, name = "Specialty_Counts") #(nurse and physician assistant were excluded)
+
+
+specialty_count_1a_2022 <-specialty_count_1_2022  %>% #(n=24420)
+  summarize(total_spcl_count = sum(Specialty_Counts,na.rm = TRUE))
+
+
+# by ounty? top 10 cities?
+#choropleth map
+
+rate_by_city <- specialt_name_2022 %>% 
+   group_by(Prscrbr_City) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000
+  )
+
+Top_5_specl_2022 <- specialt_name_2022 %>%
+  filter(Prscrbr_Type_new %in% c("Dentistry","Infectious Disease","Oral and Maxillofacial Surgery","Plastic and Reconstructive Surgery","Urology")) %>% 
+  group_by(Prscrbr_Type_new) %>%
+  left_join(specialty_count_1_2022 ,by= "Prscrbr_Type_new") %>% 
+  filter(Specialty_Counts >= 100) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000
+  ) %>%
+  #arrange(desc(AB_Prescp_rate)) %>%
+  #top_n(5) %>% 
+  left_join(specialty_count_1_2022 ,by= "Prscrbr_Type_new") %>% 
+  relocate(Specialty_Counts,.after = Prscrbr_Type_new) %>% 
+  relocate(Tot_Benes, .after = Antbtc_Tot_Clms) %>% 
+  mutate(AB_Prescp_rate=round(AB_Prescp_rate)) %>% 
+  rename(specialty =Prscrbr_Type_new,
+         `number of specialists`= Specialty_Counts,
+         `number of antibiotic claims`=Antbtc_Tot_Clms,
+         `number of total beneficiaries `=Tot_Benes,
+         `antibiotic prescriptions per 1,000 beneficiaries,Rate`= AB_Prescp_rate)
+
+#------------------------------------------------------------------------------------------------------------------------------------
+
+# SECTION 3
+
+#Table 3.Top 5 by setting-Rural and Urban; variables:(Prscrbr_Type,Tot_Clms,Antbtc_Tot_Clms,Prscrbr_RUCA,Prscrbr_RUCA_Desc)
+
+
+CMS_2022_zip_pack <- specialt_name_2022 %>% #(n= 24420)
+  mutate(Prscrbr_zip5 = as.numeric(Prscrbr_zip5))
+
+#leftjoin
+CMS_zipcountypack_2022_merge <- CMS_2022_zip_pack %>% #(n=24420)
+  left_join(PA_zipcode_merge, by="Prscrbr_zip5")
+
+missing_zipcodepack_merge_2022 <- sum(is.na(CMS_zipcountypack_2022_merge$zipcode)) #0
+missing_countypack_merge_2022 <- sum(is.na(CMS_zipcountypack_2022_merge$County)) # 13 
+
+CMS_zip_rate_2022 <- CMS_zipcountypack_2022_merge %>% # (n=24420)
+  mutate(AB_rate_2022 =(Antbtc_Tot_Clms/Tot_Benes)* 1000,
+         County = gsub(" County", "", County)) %>% 
+  filter(!(is.na(County))) #(n=24407)
+
+
+top_5_settings_2022 <-CMS_zip_rate_2022 %>% 
+  filter(Prscrbr_Type_new %in% c("Infectious Disease","Dentistry","Oral and Maxillofacial Surgery","Plastic and Reconstructive Surgery","Urology")) %>%
+  left_join(counties_settings, by = c("County" = "County Name")) %>% 
+  group_by(Prscrbr_Type_new,settings = `Rural/ Urban`) %>%
+  group_by(Prscrbr_Type_new,settings) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000,
+    AB_Prescp_rate=round(AB_Prescp_rate)) %>% 
+  #providers = n() 
+  arrange(desc(AB_Prescp_rate)) %>%
+  pivot_wider(
+    names_from = settings,
+    values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate)) %>% 
+  rename(specialty = Prscrbr_Type_new,
+         `number of antibiotic claims rural` = Antbtc_Tot_Clms_Rural,
+         `number of total beneficiaries rural` = Tot_Benes_Rural,
+         `antibiotic prescriptions per 1,000 beneficiaries,rate rural` = AB_Prescp_rate_Rural,
+         #`Number of Specialists_Rural` = providers_Rural,
+         `number of antibiotic claims urban` = Antbtc_Tot_Clms_Urban,
+         `number of total beneficiaries urban` = Tot_Benes_Urban,
+         `antibiotic prescriptions per 1,000 beneficiaries,rate urban` = AB_Prescp_rate_Urban,
+         #`Number of Specialists_Urban` = providers_Urban
+  ) %>% 
+  select(1,4,2,6,5,3,7)
+
+
+
+
+
+###########################################################################################################################
+
+#Before excluding Nurse practioners and physician assistant
+
+# blank_count_urban_rural_2022 <- sum(AS_CMS_PA_2022$Prscrbr_RUCA == "",na.rm =T) # no blanks
+# other_count_urban_rural_2022 <- sum(AS_CMS_PA_2022$Prscrbr_RUCA == 99,na.rm =T) # 5 99's
+# missing_count__urban_rural_2022 <- sum(is.na(AS_CMS_PA_2022$Prscrbr_RUCA)) # 10 missing
+# 
+# #After excluding Nurse practioners and physician assistant, suppressed values
+# 
+# blank_count_urban_rural_a_2022 <- sum(specialt_name_2022$Prscrbr_RUCA == "",na.rm=T) # no blanks
+# other_count_urban_rural_a_2022 <- sum(specialt_name_2022$Prscrbr_RUCA == 99,na.rm =T) # 1  
+# missing_count_urban_rural_a_2022 <- sum(is.na(specialt_name_2022$Prscrbr_RUCA)) # 6 missing
+# 
+# # collapsing into rural and urban based on RUCA codes
+# 
+# urban_rural_2022 <- specialt_name_2022 %>% #(n=  24413)
+#   mutate(Prscrbr_RUCA= case_when(Prscrbr_RUCA %in% c(1, 1.1)~ 1,
+#                                  Prscrbr_RUCA %in% c(2, 2.1)~ 2,
+#                                  Prscrbr_RUCA %in% c(4, 4.1)~4,
+#                                  Prscrbr_RUCA %in% c(7, 7.1)~7,
+#                                  Prscrbr_RUCA %in% c(10, 10.1)~10,
+#                                  T~ Prscrbr_RUCA)) %>% 
+#   filter(!is.na(Prscrbr_RUCA)&Prscrbr_RUCA!= 99) # 
+# 
+# # Notes by Analyst (QJ):Prscrbr_RUCA: 99's =1; NAs=6 , total 7 excluded ( 24420-7 = 24413)
+# 
+# top_5_settings_2022 <-urban_rural_2022 %>% 
+#   filter(Prscrbr_Type_new %in% c("Infectious Disease","Dentistry","Oral and Maxillofacial Surgery","Plastic and Reconstructive Surgery","Urology")
+#   ) %>%
+#   mutate(settings = case_when(Prscrbr_RUCA %in% c(1,2,3)~ "Urban",
+#                               Prscrbr_RUCA %in% c(4,5,6,7,8,9,10)~ "Rural",
+#                               T~ "other")) %>% 
+#   group_by(Prscrbr_Type_new,settings) %>%
+#   summarise(
+#     Tot_Benes = sum(Tot_Benes),
+#     Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+#     AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000,
+#     AB_Prescp_rate=round(AB_Prescp_rate)) %>% 
+#   #providers = n() 
+#   arrange(desc(AB_Prescp_rate)) %>%
+#   pivot_wider(
+#     names_from = settings,
+#     values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate)) %>% 
+#   rename(specialty = Prscrbr_Type_new,
+#          `number of antibiotic claims rural` = Antbtc_Tot_Clms_Rural,
+#          `number of total beneficiaries rural` = Tot_Benes_Rural,
+#          `antibiotic prescriptions per 1,000 beneficiaries,rate rural` = AB_Prescp_rate_Rural,
+#          #`Number of Specialists_Rural` = providers_Rural,
+#          `number of antibiotic claims urban` = Antbtc_Tot_Clms_Urban,
+#          `number of total beneficiaries urban` = Tot_Benes_Urban,
+#          `antibiotic prescriptions per 1,000 beneficiaries,rate urban` = AB_Prescp_rate_Urban,
+#          #`Number of Specialists_Urban` = providers_Urban
+#   ) %>% 
+#   select(1,4,2,6,5,3,7)
+
+#------------------------------------------------------------------------------------------------------------------------------------
+
+#SECTION 4
+#Table 4 : Top 5 by Prescriber gender
+
+top_5_gender_2022 <-specialt_name_2022 %>% 
+  filter(Prscrbr_Type_new %in% c("Infectious Disease","Dentistry","Oral and Maxillofacial Surgery","Plastic and Reconstructive Surgery","Urology")
+  ) %>%
+  mutate(Gender = case_when(Prscrbr_Gndr == "F" ~ "Female",
+                            Prscrbr_Gndr == "M" ~ "Male",
+                            T~ "other")) %>% 
+  group_by(Prscrbr_Type_new,Gender) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000,
+    AB_Prescp_rate=round(AB_Prescp_rate)
+    #providers = n()
+    ) %>%
+  arrange(desc(AB_Prescp_rate)) %>%
+  pivot_wider(
+    names_from = Gender,
+    values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate))%>%  #,providers
+  rename(specialty = Prscrbr_Type_new,
+         `number of antibiotics male` = Antbtc_Tot_Clms_Male,
+         `number of total beneficiaries male` = Tot_Benes_Male,
+         `antibiotic prescriptions per 1,000 beneficiaries,rate male` = AB_Prescp_rate_Male,
+         `number of antibiotics female` = Antbtc_Tot_Clms_Female,
+         `number of total beneficiaries female` = Tot_Benes_Female,
+         `antibiotic prescriptions per 1,000 beneficiaries,rate female` = AB_Prescp_rate_Female) %>% 
+  select(1,4,2,6,5,3,7)
+
+
+
+ ID_gender_2022 <-specialt_name_2022 %>% 
+  filter(Prscrbr_Type_new %in% c("Infectious Disease")) %>%
+  mutate(Gender = case_when(Prscrbr_Gndr == "M" ~ "Male",T~ "other"), 
+        Prscrbr_Type_new = case_when(Prscrbr_Type_new == "Infectious Disease" ~ "Infectious Disease_2022", T~ Prscrbr_Type_new) ) %>% 
+  filter(Gender == "Male") %>% 
+  group_by(Prscrbr_Type_new,Gender) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000,
+    AB_Prescp_rate =round(AB_Prescp_rate)
+    #providers = n()
+  ) %>%
+  arrange(desc(AB_Prescp_rate)) %>%
+  pivot_wider(
+    names_from = Gender,
+    values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate))
+ 
+ 
+  ID_gender_2022_F <-specialt_name_2022 %>% 
+  filter(Prscrbr_Type_new %in% c("Infectious Disease")) %>%
+  mutate(Gender = case_when(
+                            Prscrbr_Gndr == "F" ~ "Female",
+                            T~ "other"),
+         Prscrbr_Type_new = case_when(Prscrbr_Type_new == "Infectious Disease" ~ "Infectious Disease_2022", T~ Prscrbr_Type_new)) %>% 
+   filter(Gender == "Female") %>% 
+  group_by(Prscrbr_Type_new,Gender) %>%
+  summarise(
+    Tot_Benes = sum(Tot_Benes),
+    Antbtc_Tot_Clms = sum(Antbtc_Tot_Clms),
+    AB_Prescp_rate = (Antbtc_Tot_Clms ) /(Tot_Benes) * 1000,
+    AB_Prescp_rate =round(AB_Prescp_rate)
+    #providers = n()
+  ) %>%
+  arrange(desc(AB_Prescp_rate)) %>%
+  pivot_wider(
+    names_from = Gender,
+    values_from = c(Tot_Benes, Antbtc_Tot_Clms, AB_Prescp_rate)) 
+
+
+ID_gender_2020_22_Male <- rbind(ID_gender_2020,ID_gender_2021,ID_gender_2022)
+ID_gender_2020_22_Female <- rbind(ID_gender_2020_F,ID_gender_2021_F,ID_gender_2022_F)
+
+#------------------------------------------------------------------------------------------------------------------------------------
+
+# 2020 -2022 combined
+
+# Table 1.Summary of Medicare Part D claims data, excluding providers who prescribed fewer than 11 antibiotic prescriptions, Pennsylvania, 2020 – 2021
+
+Prescriber_summary_2020_2022 <- cbind(prescriber_summary_2020,prescriber_summary_2021,prescriber_summary_2022) %>%
+  rename(`COUNT (2020)` = COUNT,
+         `COUNT (2021)` = count,
+         `COUNT (2022)` = Count) %>% 
+  mutate(`COUNT (2020)`= format(round(`COUNT (2020)`),big.mark=","),
+         `COUNT (2021)`= format(round(`COUNT (2021)`),big.mark=","),
+         `COUNT (2022)`= format(round(`COUNT (2022)`),big.mark=",")) %>% 
+  slice(-6) %>% 
+  select(1,2,4,6)
+
+#------------------------------------------------------------------------------------------------------------------------------------
+
+# Table 2 . Top five medical specialties with the highest antibiotic prescribing percentages, Pennsylvania, 2020
+
+####
+Top_5_specl_2022 <- Top_5_specl_2022 %>% 
+select(`SPECIALTY (2022)` = specialty,  `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE (2022)`= `antibiotic prescriptions per 1,000 beneficiaries,Rate`)
+
+Top_5_specl_2020_2022 <- cbind(Top_5_specl_2020,Top_5_specl_2021, Top_5_specl_2022) %>%
+  rename(`SPECIALTIES` = specialty,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE (2020)` = `Antibiotic prescriptions per 1,000 beneficiaries,Rate` ,
+         `SPECIALTY (2021)` = SPECIALTY,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE (2021)`=  `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE`) %>% 
+  select(1,5,10,12)
+
+Top_5_specl_2020_2022 <- Top_5_specl_2020_2022 %>% 
+  rowwise() %>% 
+  mutate(`Mean Annual Rate` = mean(c_across(`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE (2020)`:`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE (2022)`)),
+`Mean Annual Rate` = round(`Mean Annual Rate`)) %>% 
+  ungroup()
+
+
+#------------------------------------------------------------------------------------------------------------------------------------
+
+#Table 3. Top five medical specialties stratified by settings with the highest antibiotic prescribing percentages, Pennsylvania, 2021
+
+Top_5_specl_settings_2020_2022 <- cbind(top_5_settings_2020,top_5_settings_2021,top_5_settings_2022) %>%
+  rename(`SPECIALTIES` = Specialty,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE RURAL (2020)` = `Antibiotic prescriptions per 1,000 beneficiaries,Rate rural`,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE URBAN (2020)`= `Antibiotic prescriptions per 1,000 beneficiaries,Rate urban` ,
+         `SPECIALTIES (2021)` = SPECIALTY,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE RURAL (2021)`=   `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE RURAL`,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE URBAN (2021)`=   `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE URBAN`,
+         `SPECIALTIES (2022)` = specialty,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE RURAL (2022)`=   `antibiotic prescriptions per 1,000 beneficiaries,rate rural`,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE URBAN (2022)`=   `antibiotic prescriptions per 1,000 beneficiaries,rate urban`)%>%
+  select(1,4,11,18,7,14,18,21)
+
+#####################################################################################################
+
+
+
+
+
+############### SETTINGS : Combined analysis across three years (2020-2022) ###########
+
+############# Mean Antibiotic Rates ####################
+
+
+Mean_settings_rate_2020_22 <- Top_5_specl_settings_2020_2022 %>% 
+  mutate(rural_mean_rate_2020_22 = round(mean(c_across(c(`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE RURAL (2020)`,`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE RURAL (2021)`,`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE RURAL (2022)`)))),
+       urban_mean_rate_2020_22 = round(mean(c_across(c(`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE URBAN (2020)`,`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE URBAN (2021)`,`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE URBAN (2022)`))))) %>% 
+  select(1,8,9)
+  
+
+
+###### GRAPHIC ######
+
+CMS_settings_2020_2022 <- Mean_settings_rate_2020_22  %>% 
+  pivot_longer(cols= c(rural_mean_rate_2020_22,urban_mean_rate_2020_22),
+               names_to = "Settings_Mean_2020_22",values_to = "Rate") %>% 
+  mutate(Rate = round(Rate, 0),
+         #Rate = format(Rate,big.mark = ","),
+         #Rate = as.numeric(Rate),
+         Group = c("Rural","Urban"))
+
+
+library(scales)
+ggplot(CMS_settings_2020_2022, aes(x = SPECIALTIES, y = Rate, fill = interaction(Group))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(fill= NULL,
+       #title = " Top 5 specialties: PA rate vs US rate, 2020",
+       #x = "Specialties",
+       y = "Mean Antibiotic Prescription Rate") +
+  #facet_grid(~ Year)+
+  scale_y_continuous(labels = comma, breaks = seq(0, 2600, by = 200), limits = c(0,2600)) +
+  scale_x_discrete(labels = c( "Dentistry",
+                               "Infectious Disease",
+                               "Oral and
+      Maxillofacial 
+   Surgery", 
+   "Plastic and
+      Reconstructive 
+   Surgery",
+   "Urology"))+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 360, size = 14,color = "black"),
+        axis.text.y = element_text(size = 14, color = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(vjust= 3,size = 14),
+        legend.text = element_text(size = 14, color = "black"),
+        #strip.text = element_text(face = "bold", size= 12),
+        panel.grid = element_blank())+
+  geom_text(aes(label = comma(Rate)), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.2, 
+            size = 5)+
+  scale_fill_manual(values = c("#d0e1f2", "#4a90e2"))  # Customize colors as needed
+
+
+
+
+#############################################################################################
+
+
+
+#------------------------------------------------------------------------------------------------------------------------------------
+
+#Table 4.Antibiotic prescribing percentages for the top five medical specialties, stratified by rural and urban settings, Pennsylvania, 2020
+
+Top_5_gender_2020_2022 <- cbind(top_5_gender_2020,top_5_gender_2021,top_5_gender_2022)%>%
+  rename(`SPECIALTIES` = Specialty,
+         `NUMBER OF ANTIBIOTIC CLAIMS MALE (2020)` = `Number of antibiotics male`,
+         `NUMBER OF TOTAL BENEFICIARIES MALE (2020)`= `Number of total beneficiaries male` ,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE MALE (2020)`=   `Antibiotic prescriptions per 1,000 beneficiaries,Rate male`,
+         `NUMBER OF ANTIBIOTIC CLAIMS FEMALE (2020)` = `Number of antibiotics female`,
+         `NUMBER OF TOTAL BENEFICIARIES FEMALE (2020)`= `Number of total beneficiaries female` ,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE FEMALE (2020)`=   `Antibiotic prescriptions per 1,000 beneficiaries,rate female`,
+         `SPECIALTIES (2021)` = SPECIALTY,
+         `NUMBER OF ANTIBIOTIC CLAIMS MALE (2021)`=    `NUMBER OF ANTIBIOTIC CLAIMS MALE`,
+         `NUMBER OF BENEFICIARIES MALE (2021)`=   `NUMBER OF TOTAL BENEFICIARIES MALE`,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE MALE (2021)`=   `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE MALE`,
+         `NUMBER OF ANTIBIOTIC CLAIMS FEMALE (2021)`=    `NUMBER OF ANTIBIOTIC CLAIMS FEMALE`,
+         `NUMBER OF BENEFICIARIES FEMALE (2021)`=   `NUMBER OF TOTAL BENEFICIARIES FEMALE`,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE FEMALE (2021)`= `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE FEMALE`,
+`SPECIALTIES (2022)` = specialty,
+         `NUMBER OF ANTIBIOTIC CLAIMS MALE (2022)` = `number of antibiotics male`,
+         `NUMBER OF TOTAL BENEFICIARIES MALE (2022)`= `number of total beneficiaries male` ,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE MALE (2022)`=   `antibiotic prescriptions per 1,000 beneficiaries,rate male`,
+         `NUMBER OF ANTIBIOTIC CLAIMS FEMALE (2022)` = `number of antibiotics female`,
+         `NUMBER OF TOTAL BENEFICIARIES FEMALE (2022)`= `number of total beneficiaries female` ,
+         `ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE FEMALE (2022)`=   `antibiotic prescriptions per 1,000 beneficiaries,rate female`,
+         ) %>% 
+  select(1,4,11,18,7,14,18,21)
+
+
+############### Gender : Combined analysis across three years (2020-2022) ###########
+
+######### Mean Antibiotic Rates ####################
+
+
+Mean_gender_rate_2020_22 <- Top_5_gender_2020_2022 %>% 
+  mutate(female_mean_rate_2020_22 = round(mean(c_across(c(`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE FEMALE (2020)`,`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE FEMALE (2021)`,`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE FEMALE (2022)`)))),
+       male_mean_rate_2020_22 = round(mean(c_across(c(`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE MALE (2020)`,`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE MALE (2021)`,`ANTIBIOTIC PRESCRIPTIONS per 1,000 BENEFICIARIES,RATE MALE (2022)`))))) %>% 
+  select(1,8,9)
+  
+
+### GRAPHIC######
+
+CMS_gender_2020_2022 <- Mean_gender_rate_2020_22  %>% 
+  pivot_longer(cols= c(female_mean_rate_2020_22,male_mean_rate_2020_22),
+               names_to = "Gender_Mean_2020_22",values_to = "Rate") %>% 
+  mutate(Rate = round(Rate, 0),
+         Group = c("Female","Male"))
+
+
+ggplot(CMS_gender_2020_2022, aes(x = SPECIALTIES, y = Rate, fill = interaction(Group))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(fill= NULL,
+       #title = " Top 5 specialties: PA rate vs US rate, 2020",
+       #x = "Specialties",
+       y = "Mean Antibiotic Prescription Rate") +
+  #facet_grid(~ Year)+
+  scale_y_continuous(label = comma,breaks = seq(0, 3000, by = 200)) +
+  scale_x_discrete(labels = c("Dentistry",
+                              "Infectious Disease",
+                              "Oral and
+      Maxillofacial 
+   Surgery", 
+   "Plastic and
+      Reconstructive 
+   Surgery",
+   "Urology"))+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 360, size = 14,color = "black"),
+        axis.text.y = element_text(size = 14, color = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(vjust= 3,size = 14),
+        legend.text = element_text(size = 14, color = "black"),
+        #strip.text = element_text(face = "bold", size= 12),
+        panel.grid = element_blank())+
+  geom_text(aes(label = comma(Rate)), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.2, 
+            size = 5)+
+  scale_fill_manual(values = c("#d0e1f2", "#4a90e2"))  # Customize colors as needed
+
+
+#colnames(Top_5_gender_2020_2021)
+#------------------------------------------------------------------------------------------------------------------------------------
+#Tables knitting to word using flextable
+
+```
+# Results
+
+## Summary of Prescribers
+
+In 2020, 2021, and 2022, there were `r Total_prescribers_new_2020`, `r Total_prescribers_new_2021`, and `r Total_prescribers_new_2022` prescribers in Pennsylvania's Medicare Part D database, respectively. After excluding prescribers who wrote fewer than eleven antibiotic prescriptions throughout each year, approximately `r Prescribers_2020` (`r percentage_of_prescribers_2020`),`r Prescribers_2021` (`r percentage_of_prescribers_2021`), and `r Prescribers_2022` (`r percentage_of_prescribers_2022`) prescribers were included in the analysis for 2020, 2021, and 2022, respectively (Table 1). These prescribers wrote about `r Total_Anbtcclms_new_2020$Claims_in_millions``r Total_Anbtcclms_new_2021$Claims_in_millions` million antibiotic prescriptions in 2020 and 2021, increasing to `r Total_Anbtcclms_new_2022$Claims_in_millions` million in 2022, representing an antibiotic prescription rate of 366, 355, and 366 prescriptions per 1,000 beneficiaries, respectively. There were approximately 6.6 million, 6.9 million, and 7.4 million beneficiaries during these years. CMS classified prescribers into 67 distinct specialties in 2020 and 2021, increasing to 68 specialties in 2022.
+
+
+
+```{r CMS_1_20_22, echo=FALSE, include=TRUE, warning = FALSE}
+
+set_flextable_defaults(
+  font.size = 9, theme_fun = theme_box,
+  padding = 6,
+  background.color = "#EFEFEF")
+
+ Prescriber_summary_2020_2022 %>%
+  flextable() %>%
+  set_caption( as_paragraph(
+      as_chunk("Table 1. Summary of Medicare Part D claims data, excluding providers who prescribed fewer than 11 antibiotic prescriptions, Pennsylvania, 2020 – 2022",props = fp_text_default(font.family = "Cambria(Body)",font.size = 11))),
+             style = "Table Caption") %>%
+  width(., j = c(1:3), width = 1.0, unit = "in") %>%
+  width(., j = 1, width = 1.2, unit = "in") %>%
+  width(., j = 3, width = 0.8, unit = "in")
+  #add_header_row(., values = c("COUNT"), colwidths = c( 3)) %>%
+  #align(., i=1, part="header", align="center")
+
+```
+
+```{r CMS_2_20, echo=FALSE, include=TRUE, warning = FALSE}
+
+ Top_5_specl_2020_2022 %>%
+  flextable() %>%
+  set_caption( as_paragraph(
+      as_chunk("Table 2. Top five medical specialties with the highest antibiotic prescribing percentages | Pennsylvania, 2020-2022",props = fp_text_default(font.family = "Cambria(Body)",font.size = 11))),
+             style = "Table Caption") %>%
+  width(., j = c(1:5), width = 1.0, unit = "in") %>%
+  width(., j = 1, width = 1.2, unit = "in") %>%
+  width(., j = 5, width = 0.8, unit = "in") 
+  #add_header_row(., values = c("2020","2021"), colwidths = c(2,2))
+  #align(., i=1, part="header", align="center")
+  #add_footer_lines(., " ")
+  
+set_flextable_defaults(
+  font.size = 9, theme_fun = theme_box,
+  padding = 6,
+  background.color = "#EFEFEF")
+```
+
+
+```{r CMS_3_20, echo=FALSE, include=TRUE, warning = FALSE}
+
+#  Top_5_specl_settings_2020_2022%>%
+#   flextable() %>%
+#   set_caption( as_paragraph(
+#       as_chunk("Table 3. Antibiotic prescribing percentages for the top five medical specialties, stratified by rural and urban settings| Pennsylvania, 2020-2022",props = fp_text_default(font.family = "Cambria(Body)",font.size = 11))),
+#              style = "Table Caption") %>%
+#   width(., j = c(1:7), width = 1.0, unit = "in") %>%
+#   width(., j = 1, width = 1.2, unit = "in") %>%
+#   width(., j = 7, width = 0.8, unit = "in")
+#   #add_header_row(., values = c("2020","2021"), colwidths = c(3,3)) %>%
+#   #align(., i=1, part="header", align="center")
+#   #add_footer_lines(., " ")
+# 
+# set_flextable_defaults(
+#   font.size = 9, theme_fun = theme_box,
+#   padding = 6,
+#   background.color = "#EFEFEF")
+
+Mean_settings_rate_2020_22%>%
+  flextable() %>%
+  set_caption( as_paragraph(
+      as_chunk("Table 3. Mean Antibiotic prescribing percentages for the top five medical specialties, stratified by rural and urban settings| Pennsylvania, 2020-2022",props = fp_text_default(font.family = "Cambria(Body)",font.size = 11))),
+             style = "Table Caption") %>%
+  width(., j = c(1:3), width = 1.0, unit = "in") %>%
+  width(., j = 1, width = 1.2, unit = "in") %>%
+  width(., j = 3, width = 0.8, unit = "in")
+  #add_header_row(., values = c("2020","2021"), colwidths = c(3,3)) %>%
+  #align(., i=1, part="header", align="center")
+  #add_footer_lines(., " ")
+
+set_flextable_defaults(
+  font.size = 9, theme_fun = theme_box,
+  padding = 6,
+  background.color = "#EFEFEF")
+```
+
+
+```{r CMS_4_20, echo=FALSE, include=TRUE, warning = FALSE}
+# 
+#  Top_5_gender_2020_2022 %>%
+#   flextable() %>%
+#   set_caption( as_paragraph(
+#       as_chunk("Table 4. Antibiotic prescribing percentages for the top five medical specialties, stratified by prescriber gender, Pennsylvania, 2020-2022",props = fp_text_default(font.family = "Cambria(Body)",font.size = 11))),
+#              style = "Table Caption") %>%
+#   width(., j = c(1:7), width = 1.0, unit = "in") %>%
+#   width(., j = 1, width = 1.2, unit = "in") %>%
+#   width(., j = 7, width = 0.8, unit = "in")
+#   #add_header_row(., values = c("2020","2021"), colwidths = c(3,3)) %>%
+#   #align(., i=1, part="header", align="center")
+#   
+# set_flextable_defaults(
+#   font.size = 9, theme_fun = theme_box,
+#   padding = 6,
+#   background.color = "#EFEFEF")
+
+
+
+
+
+
+
+Mean_gender_rate_2020_22 %>%
+  flextable() %>%
+  set_caption( as_paragraph(
+      as_chunk("Table 4. Mean antibiotic prescribing percentages for the top five medical specialties, stratified by prescriber gender, Pennsylvania, 2020-2022",props = fp_text_default(font.family = "Cambria(Body)",font.size = 11))),
+             style = "Table Caption") %>%
+  width(., j = c(1:3), width = 1.0, unit = "in") %>%
+  width(., j = 1, width = 1.2, unit = "in") %>%
+  width(., j = 3, width = 0.8, unit = "in")
+  #add_header_row(., values = c("2020","2021"), colwidths = c(3,3)) %>%
+  #align(., i=1, part="header", align="center")
+  
+set_flextable_defaults(
+  font.size = 9, theme_fun = theme_box,
+  padding = 6,
+  background.color = "#EFEFEF")
+
+
+
+
+
+
+```
+
+
