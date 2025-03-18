@@ -51,6 +51,7 @@ Prescribers_L_2020 <- sum(is.na(AS_CMS_PA_2020$Prscrbr_Last_Org_Name)) # 0
 Prescribers_L_B_2020 <- sum((AS_CMS_PA_2020$Prscrbr_Last_Org_Name == "")) # 0
 #duplicates_NPI_2020 <- AS_CMS_PA_2020$PRSCRBR_NPI[duplicated(AS_CMS_PA_2020$PRSCRBR_NPI)] # empty
 
+# duplicates removed
 # Calculating total No.of Prescribers (n= 60229); variables :Prscrbr_First_Name, Prscrbr_Last_Org_Name
 
 Total_prescribers_2020 <- AS_CMS_PA_2020 %>% 
