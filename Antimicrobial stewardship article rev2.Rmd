@@ -49,7 +49,7 @@ Prescribers_F_2020 <- sum(is.na(AS_CMS_PA_2020$Prscrbr_First_Name))    # 0
 Prescribers_F_B_2020 <- sum((AS_CMS_PA_2020$Prscrbr_First_Name == "")) # 1 blank
 Prescribers_L_2020 <- sum(is.na(AS_CMS_PA_2020$Prscrbr_Last_Org_Name)) # 0
 Prescribers_L_B_2020 <- sum((AS_CMS_PA_2020$Prscrbr_Last_Org_Name == "")) # 0
-duplicates_NPI_2020 <- AS_CMS_PA_2020$PRSCRBR_NPI[duplicated(AS_CMS_PA_2020$PRSCRBR_NPI)] # empty
+#duplicates_NPI_2020 <- AS_CMS_PA_2020$PRSCRBR_NPI[duplicated(AS_CMS_PA_2020$PRSCRBR_NPI)] # empty
 
 # Calculating total No.of Prescribers (n= 60229); variables :Prscrbr_First_Name, Prscrbr_Last_Org_Name
 
@@ -76,6 +76,14 @@ prscbr_summary_2020 <- AS_CMS_PA_2020 %>% #(n= 60,229--- n= 32,199)
                                      T~Antbtc_Tot_Clms)) %>% 
   filter(!(Antbtc_Tot_Clms %in% c(0,1))) %>% # (n= 32428) excluded values < 11 which are assumed to be suppressed values
  filter(!(Tot_Benes %in% 5)) # (n= 32199) excluded values < 11 which are assumed to be suppressed values
+
+
+
+
+
+
+
+
 #----------------------------------------------------------------------------------------------------------------
 #A. No.of Prescribers; variable:Prscrbr_First_Name (n=32199)
 
